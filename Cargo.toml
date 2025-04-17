@@ -3,4 +3,26 @@ name = "rusty_replay"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+path = "src/lib.rs"
+
 [dependencies]
+actix-web = "4.10.2"
+anyhow = "1.0.98"
+dotenv = "0.15.0"
+env_logger = "0.11.8"
+regex = "1.11.1"
+sea-orm = { version = "1.1.10", features = ["sqlx-mysql", "runtime-tokio-native-tls"] }
+sea-orm-macros = "1.1.10"
+serde = "1.0.219"
+serde_json = "1.0.140"
+sha2 = "0.10.8"
+sqlx = {version = "0.8.5", features = ["mysql", "runtime-tokio-rustls"] }
+thiserror = "2.0.12"
+tokio = { version = "1.44.2", features = ["full"] }
+tracing = { version = "0.1.41", features = ["log"] }
+tracing-log = "0.2.0"
+tracing-subscriber = { version = "0.3.19", features = ["registry", "env-filter"] }
+uuid = { version = "1.16.0", features = ["v4"] }
+sea-query = "0.32.3"
+actix-cors = "0.7.1"
