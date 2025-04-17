@@ -15,6 +15,12 @@ use entity::error_log;
 
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        // .with_env_filter(EnvFilter::from_default_env())
+        .with_target(true)
+        // .json() // JSON 포맷 로그
+        .init();
+
     dotenv().ok();
     let db = init_db().await?;
 
