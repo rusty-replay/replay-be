@@ -11,15 +11,14 @@ use db::init_db;
 use dotenv::dotenv;
 use sea_orm::{Schema, DatabaseBackend, ConnectionTrait, Statement};
 use sea_query::MysqlQueryBuilder;
+use tracing_subscriber::EnvFilter;
 use entity::error_log;
+use rusty_replay::telemetry::{get_subscriber, init_subscriber};
 
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        // .with_env_filter(EnvFilter::from_default_env())
-        .with_target(true)
-        // .json() // JSON 포맷 로그
-        .init();
+    let subscriber = get_subscriber("rusty_replay".into(), "info".into(), std::io::stdout);
+    init_subscriber(subscriber);
 
     dotenv().ok();
     let db = init_db().await?;
