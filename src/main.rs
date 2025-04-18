@@ -11,16 +11,26 @@ use db::init_db;
 use dotenv::dotenv;
 use sea_orm::{Schema, DatabaseBackend, ConnectionTrait, Statement};
 use sea_query::MysqlQueryBuilder;
+use tracing_log::log::info;
 use tracing_subscriber::EnvFilter;
 use entity::error_log;
 use rusty_replay::telemetry::{get_subscriber, init_subscriber};
 
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
-    let subscriber = get_subscriber("rusty_replay".into(), "info".into(), std::io::stdout);
+    let subscriber = get_subscriber(
+        "rusty_replay".into(),
+        "info,sqlx=debug".into(),
+        std::io::stdout
+    );
     init_subscriber(subscriber);
 
+    info!("애플리케이션 시작 중...");
+
     dotenv().ok();
+    info!("환경 변수 로드 완료");
+
+
     let db = init_db().await?;
 
     let schema = Schema::new(DatabaseBackend::MySql);
@@ -37,8 +47,8 @@ async fn main() -> anyhow::Result<()> {
 
     let db_data = Data::new(db);
 
+    info!("서버 시작 중: http://127.0.0.1:8080");
     HttpServer::new(move || {
-
         let cors = Cors::default()
             .allow_any_origin()
             .allowed_methods(vec!["GET", "POST", "OPTIONS"])

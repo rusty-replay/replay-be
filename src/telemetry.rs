@@ -1,10 +1,11 @@
 use actix_web::rt::task::JoinHandle;
 use tracing::subscriber::set_global_default;
 use tracing::Subscriber;
-use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
+use tracing_bunyan_formatter::{JsonStorageLayer};
 use tracing_log::LogTracer;
 use tracing_subscriber::fmt::MakeWriter;
-use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Registry};
+use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Registry};
+use tracing_subscriber::fmt::format::FmtSpan;
 
 /// Compose multiple layers into a `tracing`'s subscriber.
 ///
@@ -22,7 +23,22 @@ where
 {
     let env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(env_filter));
-    let formatting_layer = BunyanFormattingLayer::new(name, sink);
+    // let formatting_layer = BunyanFormattingLayer::new(name, sink);
+
+    let formatting_layer = fmt::layer()
+        .with_target(true)
+        .with_writer(sink)
+        .event_format(
+            fmt::format()
+                .with_level(true)
+                .with_target(true)
+                .with_thread_ids(false)
+                .with_thread_names(false)
+                .with_ansi(true)
+                .compact()
+        )
+        .with_span_events(FmtSpan::CLOSE);
+
     Registry::default()
         .with(env_filter)
         .with(JsonStorageLayer)
