@@ -30,9 +30,7 @@ async fn main() -> anyhow::Result<()> {
     dotenv().ok();
     info!("환경 변수 로드 완료");
 
-
     let db = init_db().await?;
-
     let schema = Schema::new(DatabaseBackend::MySql);
     let create_table_stmt = schema
         .create_table_from_entity(error_log::Entity)
