@@ -5,13 +5,12 @@ use actix_web::{
 };
 use std::future::{Future, Ready, ready};
 use std::pin::Pin;
-use std::task::{Context, Poll};
-
+use actix_web::body::MessageBody;
+use actix_web::middleware::Next;
 use super::jwt::JwtUtils;
 
 pub struct AuthMiddleware;
 
-// 미들웨어 팩토리
 impl<S, B> Transform<S, ServiceRequest> for AuthMiddleware
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
@@ -74,5 +73,42 @@ where
                 Err(e) => Err(e),
             }
         })
+    }
+}
+
+pub async fn auth_middleware(
+    req: ServiceRequest,
+    next: Next<impl MessageBody>,
+) -> Result<ServiceResponse<impl MessageBody>, Error> {
+    let auth_header = req.headers().get("Authorization");
+
+    match auth_header {
+        Some(header_value) => {
+            let auth_str = header_value.to_str().unwrap_or("");
+            if auth_str.starts_with("Bearer ") {
+                let token = &auth_str[7..];
+                match JwtUtils::verify_token(token) {
+                    Ok(claims) => {
+                        req.extensions_mut().insert(claims.clone());
+
+                        if let Ok(user_id) = claims.sub.parse::<i32>() {
+                            req.extensions_mut().insert(user_id);
+                        }
+
+                        println!("User ID: {:?}", claims.sub);
+
+                        next.call(req).await
+                    }
+                    Err(_) => {
+                        Err(ErrorUnauthorized("Invalid token").into())
+                    }
+                }
+            } else {
+                Err(ErrorUnauthorized("Invalid Authorization header format").into())
+            }
+        }
+        None => {
+            Err(ErrorUnauthorized("Authorization header missing").into())
+        }
     }
 }

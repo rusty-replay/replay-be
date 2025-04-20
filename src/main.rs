@@ -8,6 +8,7 @@ mod migration;
 use actix_cors::Cors;
 use actix_web::{App, HttpServer};
 use actix_web::http::header;
+use actix_web::middleware::from_fn;
 use actix_web::web::{scope, Data};
 use db::init_db;
 use dotenv::dotenv;
@@ -17,7 +18,7 @@ use tracing_log::log::info;
 use tracing_subscriber::EnvFilter;
 use entity::{error_log, user};
 use rusty_replay::telemetry::{get_subscriber, init_subscriber};
-use crate::auth::AuthMiddleware;
+use crate::auth::{AuthMiddleware, auth_middleware};
 use crate::migration::{Migrator, MigratorTrait};
 
 #[actix_web::main]
@@ -46,7 +47,6 @@ async fn main() -> anyhow::Result<()> {
         let cors = Cors::default()
             .allow_any_origin()
             .allowed_methods(vec!["GET", "POST", "OPTIONS"])
-            // .allowed_headers(vec![header::CONTENT_TYPE])
             .allowed_headers(vec![header::CONTENT_TYPE, header::AUTHORIZATION])
             .max_age(3600);
 
@@ -59,11 +59,14 @@ async fn main() -> anyhow::Result<()> {
             .service(api::refresh_token)
             .service(
                 scope("/api")
-                    .wrap(AuthMiddleware)
+                    // .wrap(AuthMiddleware)
+                    .wrap(from_fn(auth_middleware))
                     .service(api::get_me)
                     .service(api::report_error)
                     .service(api::list_errors)
-                    .service(api::get_error))
+                    .service(api::get_error)
+                    .service(api::create_project)
+            )
     })
         .bind(("127.0.0.1", 8080))?
         .run()

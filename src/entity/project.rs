@@ -8,6 +8,7 @@ pub struct Model {
     pub id: i32,
     pub name: String,
     pub api_key: String,
+    pub description: Option<String>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

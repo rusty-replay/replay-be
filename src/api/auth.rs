@@ -146,15 +146,12 @@ pub async fn refresh_token(
 #[get("/auth/me")]
 pub async fn get_me(
     db: web::Data<DatabaseConnection>,
-    req_claims: web::ReqData<Claims>,
+    user_id: web::ReqData<i32>,
 ) -> Result<HttpResponse, AppError> {
     let txn = db.begin().await
         .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("트랜잭션 시작 실패: {}", e)))?;
 
-    let claims = req_claims.into_inner();
-
-    let user_id = claims.sub.parse::<i32>()
-        .map_err(|_| AppError::new(ErrorCode::InternalError))?;
+    let user_id = *user_id;
 
     let user_options = UserEntity::find_by_id(user_id)
         .one(&txn)

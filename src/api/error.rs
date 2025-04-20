@@ -22,7 +22,9 @@ pub async fn health_check() -> impl Responder {
 pub async fn report_error(
     body: web::Json<ErrorReportRequest>,
     db: web::Data<sea_orm::DatabaseConnection>,
+    user_id: web::ReqData<i32>,
 ) -> impl Responder {
+    let user_id = *user_id;
     let group_hash = calculate_group_hash(&body.message, &body.stacktrace);
 
     let new_log = ActiveModel {
@@ -32,6 +34,7 @@ pub async fn report_error(
         timestamp: Set(body.timestamp.clone()),
         group_hash: Set(group_hash.clone()),
         replay: Set(body.replay.clone().into()),
+        reported_by: Set(Some(user_id)),
         ..Default::default()
     };
 
@@ -45,13 +48,17 @@ pub async fn report_error(
         timestamp: inserted.timestamp,
         group_hash,
         replay: inserted.replay,
+        reported_by: inserted.reported_by,
     })
 }
 
 #[get("/errors")]
 pub async fn list_errors(
     db: web::Data<sea_orm::DatabaseConnection>,
+    user_id: web::ReqData<i32>,
 ) -> impl Responder {
+    let user_id = *user_id;
+
     let logs = ErrorEntity::find()
         .order_by_desc(error_log::Column::Id)
         .all(db.get_ref())
@@ -68,6 +75,7 @@ pub async fn list_errors(
             timestamp: l.timestamp,
             group_hash: l.group_hash,
             replay: l.replay,
+            reported_by: l.reported_by,
         })
         .collect();
 
@@ -78,7 +86,10 @@ pub async fn list_errors(
 pub async fn get_error(
     db: web::Data<sea_orm::DatabaseConnection>,
     path: web::Path<i32>,
+    user_id: web::ReqData<i32>,
 ) -> impl Responder {
+    let user_id = *user_id;
+
     let id = path.into_inner();
     if let Some(l) = ErrorEntity::find_by_id(id)
         .one(db.get_ref())
@@ -93,6 +104,7 @@ pub async fn get_error(
             timestamp: l.timestamp,
             group_hash: l.group_hash,
             replay: l.replay,
+            reported_by: l.reported_by,
         })
     } else {
         HttpResponse::NotFound().body("Not Found")

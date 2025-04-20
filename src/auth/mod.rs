@@ -2,4 +2,4 @@ pub mod jwt;
 pub mod middleware;
 
 pub use jwt::JwtUtils;
-pub use middleware::AuthMiddleware;
+pub use middleware::{AuthMiddleware, auth_middleware};

@@ -14,9 +14,18 @@ impl MigratorTrait for Migrator {
         vec![
             Box::new(m20250420_000002_create_user_table::Migration),
             Box::new(m20250420_000003_create_project_table::Migration),
-            Box::new(m20250420_000001_create_error_log_table::Migration),
             Box::new(m20250420_000004_create_issue_table::Migration),
             Box::new(m20250420_01_create_project_member_table::Migration),
+            Box::new(m20250420_000001_create_error_log_table::Migration),
         ]
     }
+    // fn migrations() -> Vec<Box<dyn MigrationTrait>> {
+    //     vec![
+    //         Box::new(m20250420_000002_create_user_table::Migration),
+    //         Box::new(m20250420_000003_create_project_table::Migration),
+    //         Box::new(m20250420_000001_create_error_log_table::Migration),
+    //         Box::new(m20250420_000004_create_issue_table::Migration),
+    //         Box::new(m20250420_01_create_project_member_table::Migration),
+    //     ]
+    // }
 }

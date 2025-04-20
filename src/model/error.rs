@@ -19,4 +19,5 @@ pub struct ErrorReportResponse {
     pub timestamp: String,
     pub group_hash: String,
     pub replay: Value,
+    pub reported_by: Option<i32>,
 }
