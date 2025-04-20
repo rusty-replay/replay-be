@@ -1,7 +1,7 @@
-use actix_web::{get, post, web, HttpResponse, Responder, http::header};
+use actix_web::{get, post, web, HttpResponse, Responder, http::header, Error};
 use bcrypt::{hash, verify, DEFAULT_COST};
 use chrono::Utc;
-use sea_orm::{DatabaseConnection, EntityTrait, Set, ActiveModelTrait, QueryFilter, ColumnTrait};
+use sea_orm::{DatabaseConnection, EntityTrait, Set, ActiveModelTrait, QueryFilter, ColumnTrait, TransactionTrait};
 use sea_query::Condition;
 use crate::entity::user::{self, Entity as UserEntity};
 use crate::model::auth::{RegisterRequest, LoginRequest, AuthResponse, RefreshTokenRequest, UserResponse, Claims};
@@ -11,38 +11,27 @@ use crate::auth::jwt::JwtUtils;
 pub async fn register(
     body: web::Json<RegisterRequest>,
     db: web::Data<DatabaseConnection>,
-) -> impl Responder {
+) -> Result<HttpResponse, Error> {
+    let txn = db.begin().await?;
+
     let existing_user = UserEntity::find()
         .filter(
             Condition::any()
                 .add(user::Column::Username.eq(&body.username))
                 .add(user::Column::Email.eq(&body.email))
         )
-        .one(db.get_ref())
-        .await;
+        .one(&txn)
+        .await?;
 
-    match existing_user {
-        Ok(Some(_)) => {
-            return HttpResponse::BadRequest().json(serde_json::json!({
-                "error": "Username or email already exists"
-            }));
-        }
-        Err(_) => {
-            return HttpResponse::InternalServerError().json(serde_json::json!({
-                "error": "Database error"
-            }));
-        }
-        _ => {}
+    if existing_user.is_some() {
+        let _ = txn.rollback().await;
+        return Ok(HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "Username or email already exists"
+        })));
     }
 
-    let hashed_password = match hash(&body.password, DEFAULT_COST) {
-        Ok(h) => h,
-        Err(_) => {
-            return HttpResponse::InternalServerError().json(serde_json::json!({
-                "error": "Error hashing password"
-            }));
-        }
-    };
+    let hashed_password = hash(&body.password, DEFAULT_COST)
+        .map_err(|_| actix_web::error::ErrorInternalServerError("Error hashing password"))?;
 
     let new_user = user::ActiveModel {
         username: Set(body.username.clone()),
@@ -54,27 +43,23 @@ pub async fn register(
         ..Default::default()
     };
 
-    let user_result = new_user.insert(db.get_ref()).await;
-    match user_result {
-        Ok(user) => {
-            let token = JwtUtils::generate_token(user.id, &user.role).unwrap();
-            let r_token = JwtUtils::generate_refresh_token(user.id).unwrap();
+    let user = new_user.insert(&txn).await?;
 
-            HttpResponse::Created().json(AuthResponse {
-                token,
-                refresh_token: r_token,
-                user_id: user.id,
-                username: user.username,
-                email: user.email,
-                role: user.role,
-            })
-        }
-        Err(_) => {
-            HttpResponse::InternalServerError().json(serde_json::json!({
-                "error": "Failed to create user"
-            }))
-        }
-    }
+    let token = JwtUtils::generate_token(user.id, &user.role)
+        .map_err(|_| actix_web::error::ErrorInternalServerError("Failed to generate token"))?;
+    let r_token = JwtUtils::generate_refresh_token(user.id)
+        .map_err(|_| actix_web::error::ErrorInternalServerError("Failed to generate refresh token"))?;
+
+    txn.commit().await?;
+
+    Ok(HttpResponse::Created().json(AuthResponse {
+        token,
+        refresh_token: r_token,
+        user_id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+    }))
 }
 
 #[post("/auth/login")]
@@ -82,8 +67,6 @@ pub async fn login(
     body: web::Json<LoginRequest>,
     db: web::Data<DatabaseConnection>,
 ) -> impl Responder {
-    let txn = db.begin().await?;
-
     let user_result = UserEntity::find()
         .filter(user::Column::Email.eq(&body.email))
         .one(db.get_ref())
