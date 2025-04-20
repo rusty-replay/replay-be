@@ -1,4 +1,4 @@
-use actix_web::{get, post, web, HttpResponse, Responder, http::header, Error};
+use actix_web::{get, post, web, HttpResponse};
 use bcrypt::{hash, verify, DEFAULT_COST};
 use chrono::Utc;
 use sea_orm::{DatabaseConnection, EntityTrait, Set, ActiveModelTrait, QueryFilter, ColumnTrait, TransactionTrait};
@@ -69,141 +69,111 @@ pub async fn register(
 pub async fn login(
     body: web::Json<LoginRequest>,
     db: web::Data<DatabaseConnection>,
-) -> impl Responder {
-    let user_result = UserEntity::find()
+) -> Result<HttpResponse, AppError> {
+    let txn = db.begin().await
+        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("트랜잭션 시작 실패: {}", e)))?;
+
+    let user_option = UserEntity::find()
         .filter(user::Column::Email.eq(&body.email))
-        .one(db.get_ref())
-        .await;
+        .one(&txn)
+        .await
+        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("사용자 조회 실패: {}", e)))?;
 
-    let user = match user_result {
-        Ok(Some(user)) => user,
-        Ok(None) => {
-            return HttpResponse::Unauthorized().json(serde_json::json!({
-                "error": "Invalid credentials"
-            }));
-        }
-        Err(_) => {
-            return HttpResponse::InternalServerError().json(serde_json::json!({
-                "error": "Database error"
-            }));
-        }
+    let user = match user_option {
+        Some(user) => user,
+        None => return Err(AppError::new(ErrorCode::InvalidEmailPwd)),
     };
 
-    let is_valid = match verify(&body.password, &user.password) {
-        Ok(valid) => valid,
-        Err(_) => {
-            return HttpResponse::InternalServerError().json(serde_json::json!({
-                "error": "Error verifying password"
-            }));
-        }
-    };
+    let is_valid = verify(&body.password, &user.password)
+        .map_err(|_| AppError::new(ErrorCode::InternalError))?;
 
     if !is_valid {
-        return HttpResponse::Unauthorized().json(serde_json::json!({
-            "error": "Invalid credentials"
-        }));
+        return Err(AppError::new(ErrorCode::InvalidEmailPwd));
     }
 
-    let token = JwtUtils::generate_token(user.id, &user.role).unwrap();
-    let r_token = JwtUtils::generate_refresh_token(user.id).unwrap();
+    let token = JwtUtils::generate_token(user.id, &user.role)
+        .map_err(|_| AppError::new(ErrorCode::TokenGenerationFailed))?;
 
-    HttpResponse::Ok().json(AuthResponse {
+    let r_token = JwtUtils::generate_refresh_token(user.id)
+        .map_err(|_| AppError::new(ErrorCode::TokenGenerationFailed))?;
+
+    txn.commit().await
+        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("트랜잭션 커밋 실패: {}", e)))?;
+
+    Ok(HttpResponse::Ok().json(AuthResponse {
         token,
         refresh_token: r_token,
         user_id: user.id,
         username: user.username,
         email: user.email,
         role: user.role,
-    })
+    }))
 }
 
 #[post("/auth/refresh")]
 pub async fn refresh_token(
     body: web::Json<RefreshTokenRequest>,
     db: web::Data<DatabaseConnection>,
-) -> impl Responder {
-    let claims = match JwtUtils::verify_token(&body.refresh_token) {
-        Ok(claims) => claims,
-        Err(_) => {
-            return HttpResponse::Unauthorized().json(serde_json::json!({
-                "error": "Invalid refresh token"
-            }));
-        }
-    };
+) -> Result<HttpResponse, AppError> {
+    let claims = JwtUtils::verify_token(&body.refresh_token)
+        .map_err(|_| AppError::new(ErrorCode::InvalidRefreshToken))?;
 
     if claims.role != "refresh" {
-        return HttpResponse::Unauthorized().json(serde_json::json!({
-            "error": "Not a refresh token"
-        }));
+        return Err(AppError::new(ErrorCode::NotRefreshToken));
     }
 
-    let user_id = match claims.sub.parse::<i32>() {
-        Ok(id) => id,
-        Err(_) => {
-            return HttpResponse::InternalServerError().json(serde_json::json!({
-                "error": "Invalid user ID in token"
-            }));
-        }
+    let user_id = claims.sub.parse::<i32>()
+        .map_err(|_| AppError::new(ErrorCode::InternalError))?;
+
+    let user_option = UserEntity::find_by_id(user_id)
+        .one(db.get_ref())
+        .await
+        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("사용자 조회 실패: {}", e)))?;
+
+    let user = match user_option {
+        Some(user) => user,
+        None => return Err(AppError::new(ErrorCode::MemberNotFound)),
     };
 
-    let user_result = UserEntity::find_by_id(user_id).one(db.get_ref()).await;
-    let user = match user_result {
-        Ok(Some(user)) => user,
-        Ok(None) => {
-            return HttpResponse::Unauthorized().json(serde_json::json!({
-                "error": "User not found"
-            }));
-        }
-        Err(_) => {
-            return HttpResponse::InternalServerError().json(serde_json::json!({
-                "error": "Database error"
-            }));
-        }
-    };
+    let new_token = JwtUtils::generate_token(user.id, &user.role)
+        .map_err(|_| AppError::new(ErrorCode::TokenGenerationFailed))?;
 
-    let new_token = JwtUtils::generate_token(user.id, &user.role).unwrap();
-
-    HttpResponse::Ok().json(serde_json::json!({
+    Ok(HttpResponse::Ok().json(serde_json::json!({
         "token": new_token
-    }))
+    })))
 }
 
 #[get("/auth/me")]
 pub async fn get_me(
     db: web::Data<DatabaseConnection>,
     req_claims: web::ReqData<Claims>,
-) -> impl Responder {
+) -> Result<HttpResponse, AppError> {
+    let txn = db.begin().await
+        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("트랜잭션 시작 실패: {}", e)))?;
+
     let claims = req_claims.into_inner();
 
-    let user_id = match claims.sub.parse::<i32>() {
-        Ok(id) => id,
-        Err(_) => {
-            return HttpResponse::InternalServerError().json(serde_json::json!({
-                "error": "Invalid user ID in token"
-            }));
-        }
+    let user_id = claims.sub.parse::<i32>()
+        .map_err(|_| AppError::new(ErrorCode::InternalError))?;
+
+    let user_options = UserEntity::find_by_id(user_id)
+        .one(&txn)
+        .await
+        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("사용자 조회 실패: {}", e)))?;
+
+    let user = match user_options {
+        Some(user) => user,
+        None => return Err(AppError::new(ErrorCode::MemberNotFound)),
     };
 
-    let user_result = UserEntity::find_by_id(user_id).one(db.get_ref()).await;
-    match user_result {
-        Ok(Some(user)) => {
-            HttpResponse::Ok().json(UserResponse {
-                id: user.id,
-                username: user.username,
-                email: user.email,
-                role: user.role,
-                created_at: user.created_at.into(),
-            })
-        }
-        Ok(None) => {
-            HttpResponse::NotFound().json(serde_json::json!({
-                "error": "User not found"
-            }))
-        }
-        Err(_) => {
-            HttpResponse::InternalServerError().json(serde_json::json!({
-                "error": "Database error"
-            }))
-        }
-    }
+    txn.commit().await
+        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("트랜잭션 커밋 실패: {}", e)))?;
+
+    Ok(HttpResponse::Ok().json(UserResponse {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        created_at: user.created_at.into(),
+    }))
 }

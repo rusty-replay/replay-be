@@ -8,6 +8,9 @@ pub enum ErrorCode {
     ValidationError,
     DuplicateAccountEmail,
     InvalidPassword,
+    InvalidEmailPwd,
+    NotRefreshToken,
+    InvalidRefreshToken,
 
     // 401 UNAUTHORIZED
     AuthenticationFailed,
@@ -33,6 +36,9 @@ impl ErrorCode {
             ErrorCode::ValidationError => "유효성 검증에 실패했습니다",
             ErrorCode::DuplicateAccountEmail => "이미 등록된 이메일입니다. 로그인해주세요",
             ErrorCode::InvalidPassword => "비밀번호는 최소 8자 이상이어야 합니다",
+            ErrorCode::InvalidEmailPwd => "잘못된 자격 증명입니다",
+            ErrorCode::NotRefreshToken => "잘못된 리프레시 토큰입니다",
+            ErrorCode::InvalidRefreshToken => "리프레시 토큰이 유효하지 않습니다",
 
             ErrorCode::AuthenticationFailed => "인증에 실패했습니다",
             ErrorCode::ExpiredAuthToken => "로그인 토큰이 만료되었습니다",
@@ -53,6 +59,9 @@ impl ErrorCode {
         use actix_web::http::StatusCode;
 
         match self {
+            ErrorCode::InvalidRefreshToken |
+            ErrorCode::NotRefreshToken |
+            ErrorCode::InvalidEmailPwd |
             ErrorCode::ValidationError |
             ErrorCode::DuplicateAccountEmail |
             ErrorCode::InvalidPassword => StatusCode::BAD_REQUEST,
