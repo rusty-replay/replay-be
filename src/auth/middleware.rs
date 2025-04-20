@@ -7,6 +7,7 @@ use std::future::{Future, Ready, ready};
 use std::pin::Pin;
 use actix_web::body::MessageBody;
 use actix_web::middleware::Next;
+use crate::model::global_error::{AppError, ErrorCode};
 use super::jwt::JwtUtils;
 
 pub struct AuthMiddleware;
@@ -100,15 +101,15 @@ pub async fn auth_middleware(
                         next.call(req).await
                     }
                     Err(_) => {
-                        Err(ErrorUnauthorized("Invalid token").into())
+                        Err(AppError::new(ErrorCode::InvalidAuthToken).into())
                     }
                 }
             } else {
-                Err(ErrorUnauthorized("Invalid Authorization header format").into())
+                Err(AppError::new(ErrorCode::InvalidAuthToken).into())
             }
         }
         None => {
-            Err(ErrorUnauthorized("Authorization header missing").into())
+            Err(AppError::new(ErrorCode::InvalidAuthToken).into())
         }
     }
 }
