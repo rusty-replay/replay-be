@@ -3,6 +3,7 @@ mod api;
 mod model;
 mod entity;
 mod auth;
+mod migration;
 
 use actix_cors::Cors;
 use actix_web::{App, HttpServer};
@@ -17,6 +18,7 @@ use tracing_subscriber::EnvFilter;
 use entity::{error_log, user};
 use rusty_replay::telemetry::{get_subscriber, init_subscriber};
 use crate::auth::AuthMiddleware;
+use crate::migration::{Migrator, MigratorTrait};
 
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
@@ -33,27 +35,31 @@ async fn main() -> anyhow::Result<()> {
     info!("환경 변수 로드 완료");
 
     let db = init_db().await?;
-    let schema = Schema::new(DatabaseBackend::MySql);
-    let create_table_stmt = schema
-        .create_table_from_entity(error_log::Entity)
-        .if_not_exists()
-        .to_string(MysqlQueryBuilder);
+    info!("데이터베이스 마이그레이션 실행 중...");
+    Migrator::up(&db, None).await?;
+    info!("마이그레이션 완료");
 
-    db.execute(Statement::from_string(
-        DatabaseBackend::MySql,
-        create_table_stmt,
-    ))
-        .await?;
-
-    let create_user_table_stmt = schema
-        .create_table_from_entity(user::Entity)
-        .if_not_exists()
-        .to_string(MysqlQueryBuilder);
-
-    db.execute(Statement::from_string(
-        DatabaseBackend::MySql,
-        create_user_table_stmt,
-    )).await?;
+    // let schema = Schema::new(DatabaseBackend::MySql);
+    // let create_table_stmt = schema
+    //     .create_table_from_entity(error_log::Entity)
+    //     .if_not_exists()
+    //     .to_string(MysqlQueryBuilder);
+    //
+    // db.execute(Statement::from_string(
+    //     DatabaseBackend::MySql,
+    //     create_table_stmt,
+    // ))
+    //     .await?;
+    //
+    // let create_user_table_stmt = schema
+    //     .create_table_from_entity(user::Entity)
+    //     .if_not_exists()
+    //     .to_string(MysqlQueryBuilder);
+    //
+    // db.execute(Statement::from_string(
+    //     DatabaseBackend::MySql,
+    //     create_user_table_stmt,
+    // )).await?;
 
     let db_data = Data::new(db);
 
@@ -80,9 +86,6 @@ async fn main() -> anyhow::Result<()> {
                     .service(api::report_error)
                     .service(api::list_errors)
                     .service(api::get_error))
-            // .service(api::report_error)
-            // .service(api::list_errors)
-            // .service(api::get_error)
     })
         .bind(("127.0.0.1", 8080))?
         .run()

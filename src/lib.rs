@@ -5,3 +5,4 @@ pub mod telemetry;
 pub mod configuration;
 pub mod model;
 pub mod auth;
+pub mod migration;
