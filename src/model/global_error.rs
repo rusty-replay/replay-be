@@ -11,6 +11,7 @@ pub enum ErrorCode {
     InvalidEmailPwd,
     NotRefreshToken,
     InvalidRefreshToken,
+    InvalidApiKey,
 
     // 401 UNAUTHORIZED
     AuthenticationFailed,
@@ -24,6 +25,7 @@ pub enum ErrorCode {
     MemberNotFound,
     GroupNotFound,
     ProjectNotFound,
+    ErrorLogNotFound,
 
     // 500 SERVER ERRORS
     DatabaseError,
@@ -40,6 +42,8 @@ impl ErrorCode {
             ErrorCode::InvalidEmailPwd => "잘못된 자격 증명입니다",
             ErrorCode::NotRefreshToken => "잘못된 리프레시 토큰입니다",
             ErrorCode::InvalidRefreshToken => "리프레시 토큰이 유효하지 않습니다",
+            ErrorCode::InvalidApiKey => "유효하지 않은 API 키입니다",
+            ErrorCode::ErrorLogNotFound => "유효하지 않은 에러 로그 ID입니다",
 
             ErrorCode::AuthenticationFailed => "인증에 실패했습니다",
             ErrorCode::ExpiredAuthToken => "로그인 토큰이 만료되었습니다",
@@ -61,6 +65,7 @@ impl ErrorCode {
         use actix_web::http::StatusCode;
 
         match self {
+            ErrorCode::InvalidApiKey |
             ErrorCode::InvalidRefreshToken |
             ErrorCode::NotRefreshToken |
             ErrorCode::InvalidEmailPwd |
@@ -74,6 +79,7 @@ impl ErrorCode {
 
             ErrorCode::NotEnoughPermission => StatusCode::FORBIDDEN,
 
+            ErrorCode::ErrorLogNotFound |
             ErrorCode::ProjectNotFound |
             ErrorCode::MemberNotFound |
             ErrorCode::GroupNotFound => StatusCode::NOT_FOUND,

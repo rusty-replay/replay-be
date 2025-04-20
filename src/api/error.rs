@@ -1,46 +1,167 @@
 
 use actix_web::{get, post, web, HttpResponse, Responder};
-use sea_orm::{EntityTrait, Set, ActiveModelTrait, QueryOrder};
-use crate::entity::error_log::{self, ActiveModel, Entity as ErrorEntity};
+use chrono::Utc;
+use sea_orm::{EntityTrait, Set, ActiveModelTrait, QueryOrder, DatabaseConnection, QueryFilter, Condition, ColumnTrait, JoinType};
+use crate::entity::error_log::{self, ActiveModel as ErrorLogActiveModel, Entity as ErrorEntity};
+use crate::entity::issue::{ActiveModel as IssueActiveModel, Entity as IssueEntity};
+use crate::entity::project::{Entity as ProjectEntity};
+use crate::entity::project_member::{self, Entity as ProjectMemberEntity};
+use crate::entity::user::{Entity as UserEntity};
+use crate::entity::error_log::{Entity as ErrorLogEntity};
 use crate::model::error::{ErrorReportRequest, ErrorReportResponse};
 use sha2::{Sha256, Digest};
+use crate::entity::{issue, project};
+use crate::model::global_error::{AppError, ErrorCode};
+
+#[utoipa::path(
+    get,
+    path = "/health-check",
+    responses(
+        (status = 200, description = "서버가 정상 동작 중", body = String)
+    )
+)]
+#[get("/health-check")]
+pub async fn health_check() -> impl Responder {
+    HttpResponse::Ok().body("OK")
+}
 
 fn calculate_group_hash(message: &str, stack: &str) -> String {
+    // 메시지에서 변수 부분 정규화 (숫자, ID 등 제거)
+    let normalized_message = message
+        .replace(|c: char| c.is_numeric(), "0")
+        .replace(|c: char| c.is_ascii_hexdigit() && !c.is_numeric(), "X");
+
+    // 스택트레이스에서 중요 부분만 추출 (파일 경로, 라인 번호 제외)
+    let stack_lines: Vec<&str> = stack.lines().collect();
+    let mut important_stack = String::new();
+
+    // stack trace 처음 3줄만 사용
+    for i in 0..std::cmp::min(3, stack_lines.len()) {
+        if let Some(func_pos) = stack_lines[i].find("at ") {
+            if let Some(file_pos) = stack_lines[i][func_pos..].find(" (") {
+                important_stack.push_str(&stack_lines[i][func_pos..func_pos+file_pos]);
+                important_stack.push('\n');
+            } else {
+                important_stack.push_str(stack_lines[i]);
+                important_stack.push('\n');
+            }
+        }
+    }
+
     let mut hasher = Sha256::new();
-    hasher.update(message);
-    hasher.update(stack);
+    hasher.update(normalized_message);
+    hasher.update(important_stack);
     let result = hasher.finalize();
     format!("{:x}", result)
 }
 
-#[get("/health-check")]
-pub async fn health_check() -> impl Responder {
-    HttpResponse::Ok().body("OK")
+async fn find_project_by_api_key(db: &DatabaseConnection, api_key: &str) -> Result<i32, AppError> {
+    let project = ProjectEntity::find()
+        .filter(project::Column::ApiKey.eq(api_key))
+        .one(db)
+        .await
+        .map_err(|_| AppError::new(ErrorCode::DatabaseError))?
+        .ok_or_else(|| AppError::new(ErrorCode::InvalidApiKey))?;
+
+    Ok(project.id)
+}
+
+async fn create_or_update_issue(db: &DatabaseConnection, project_id: i32, group_hash: &str, message: &str) -> Result<i32, AppError> {
+    let now = Utc::now();
+
+    // 기존 이슈 찾기
+    let existing_issue = IssueEntity::find()
+        .filter(
+            issue::Column::ProjectId.eq(project_id)
+                .and(issue::Column::GroupHash.eq(group_hash))
+        )
+        .one(db)
+        .await
+        .map_err(|_| AppError::new(ErrorCode::DatabaseError))?;
+
+    if let Some(issue) = existing_issue {
+        // 기존 이슈 업데이트
+        let mut issue_model: issue::ActiveModel = issue.clone().into();
+        issue_model.count = Set(issue.count + 1);
+        issue_model.last_seen = Set(now.into());
+        issue_model.updated_at = Set(now.into());
+
+        let updated_issue = issue_model.update(db).await
+            .map_err(|_| AppError::new(ErrorCode::DatabaseError))?;
+
+        Ok(updated_issue.id)
+    } else {
+        // 새 이슈 생성
+        let title = if message.len() > 100 {
+            format!("{}...", &message[..97])
+        } else {
+            message.to_string()
+        };
+
+        let new_issue = IssueActiveModel {
+            title: Set(title),
+            group_hash: Set(group_hash.to_string()),
+            status: Set("open".to_string()),
+            first_seen: Set(now.into()),
+            last_seen: Set(now.into()),
+            count: Set(1),
+            project_id: Set(project_id),
+            assigned_to: Set(None),
+            created_at: Set(now.into()),
+            updated_at: Set(now.into()),
+            ..Default::default()
+        };
+
+        let inserted_issue = new_issue.insert(db).await
+            .map_err(|_| AppError::new(ErrorCode::DatabaseError))?;
+
+        Ok(inserted_issue.id)
+    }
 }
 
 #[post("/errors")]
 pub async fn report_error(
     body: web::Json<ErrorReportRequest>,
     db: web::Data<sea_orm::DatabaseConnection>,
-    user_id: web::ReqData<i32>,
-) -> impl Responder {
-    let user_id = *user_id;
+) -> Result<HttpResponse, AppError> {
+    let project_id = find_project_by_api_key(db.get_ref(), &body.api_key).await?;
+
     let group_hash = calculate_group_hash(&body.message, &body.stacktrace);
 
-    let new_log = ActiveModel {
+    let issue_id = create_or_update_issue(db.get_ref(), project_id, &group_hash, &body.message).await?;
+
+    let now = Utc::now();
+
+    // 에러 로그 생성
+    let new_log = ErrorLogActiveModel {
         message: Set(body.message.clone()),
         stacktrace: Set(body.stacktrace.clone()),
         app_version: Set(body.app_version.clone()),
         timestamp: Set(body.timestamp.clone()),
         group_hash: Set(group_hash.clone()),
         replay: Set(body.replay.clone().into()),
-        reported_by: Set(Some(user_id)),
+        environment: Set(body.environment.clone().unwrap_or_else(|| "production".to_string())),
+        browser: Set(body.browser.clone()),
+        os: Set(body.os.clone()),
+        ip_address: Set(None),
+        user_agent: Set(body.user_agent.clone()),
+        project_id: Set(project_id),
+        issue_id: Set(Some(issue_id)),
+        reported_by: Set(body.user_id),
+        created_at: Set(now.into()),
+        updated_at: Set(now.into()),
         ..Default::default()
     };
 
-    let inserted = new_log.insert(db.get_ref()).await.unwrap();
+    // 데이터베이스에 저장
+    let inserted = new_log.insert(db.get_ref()).await
+        .map_err(|e| {
+            log::error!("에러 로그 저장 중 오류 발생: {}", e);
+            AppError::new(ErrorCode::DatabaseError)
+        })?;
 
-    HttpResponse::Ok().json(ErrorReportResponse {
+    // 응답 반환
+    Ok(HttpResponse::Created().json(ErrorReportResponse {
         id: inserted.id,
         message: inserted.message,
         stacktrace: inserted.stacktrace,
@@ -48,22 +169,76 @@ pub async fn report_error(
         timestamp: inserted.timestamp,
         group_hash,
         replay: inserted.replay,
-        reported_by: inserted.reported_by,
-    })
+        issue_id: Some(issue_id),
+    }))
 }
 
-#[get("/errors")]
-pub async fn list_errors(
-    db: web::Data<sea_orm::DatabaseConnection>,
-    user_id: web::ReqData<i32>,
-) -> impl Responder {
-    let user_id = *user_id;
 
-    let logs = ErrorEntity::find()
-        .order_by_desc(error_log::Column::Id)
+// #[post("/errors")]
+// pub async fn report_error(
+//     body: web::Json<ErrorReportRequest>,
+//     db: web::Data<sea_orm::DatabaseConnection>,
+//     user_id: web::ReqData<i32>,
+// ) -> impl Responder {
+//     let user_id = *user_id;
+//     let group_hash = calculate_group_hash(&body.message, &body.stacktrace);
+//
+//     let new_log = ActiveModel {
+//         message: Set(body.message.clone()),
+//         stacktrace: Set(body.stacktrace.clone()),
+//         app_version: Set(body.app_version.clone()),
+//         timestamp: Set(body.timestamp.clone()),
+//         group_hash: Set(group_hash.clone()),
+//         replay: Set(body.replay.clone().into()),
+//         ..Default::default()
+//     };
+//
+//     let inserted = new_log.insert(db.get_ref()).await.unwrap();
+//
+//     HttpResponse::Ok().json(ErrorReportResponse {
+//         id: inserted.id,
+//         message: inserted.message,
+//         stacktrace: inserted.stacktrace,
+//         app_version: inserted.app_version,
+//         timestamp: inserted.timestamp,
+//         group_hash,
+//         replay: inserted.replay,
+//     })
+// }
+
+#[get("/projects/{project_id}/errors")]
+pub async fn list_project_errors(
+    db: web::Data<sea_orm::DatabaseConnection>,
+    path: web::Path<i32>,
+    auth_user: web::ReqData<i32>,
+) -> Result<HttpResponse, AppError> {
+    let project_id = path.into_inner();
+    let user_id = auth_user.into_inner();
+
+    let is_member = ProjectMemberEntity::find()
+        .filter(
+            Condition::all()
+                .add(project_member::Column::ProjectId.eq(project_id))
+                .add(project_member::Column::UserId.eq(user_id))
+        )
+        .one(db.get_ref())
+        .await
+        .map_err(|err| {
+            log::error!("프로젝트 멤버십 확인 중 오류 발생: {}", err);
+            AppError::new(ErrorCode::DatabaseError)
+        })?;
+
+    if is_member.is_none() {
+        return Err(AppError::new(ErrorCode::NotEnoughPermission));
+    }
+
+    let logs = ErrorLogEntity::find()
+        .filter(error_log::Column::ProjectId.eq(project_id))
+        .order_by_desc(error_log::Column::CreatedAt)
+        // .limit(100)
         .all(db.get_ref())
         .await
-        .unwrap();
+        .map_err(|_| AppError::new(ErrorCode::DatabaseError))?;
 
     let response: Vec<ErrorReportResponse> = logs
         .into_iter()
@@ -75,38 +250,58 @@ pub async fn list_errors(
             timestamp: l.timestamp,
             group_hash: l.group_hash,
             replay: l.replay,
-            reported_by: l.reported_by,
+            issue_id: l.issue_id,
         })
         .collect();
 
-    HttpResponse::Ok().json(response)
+    Ok(HttpResponse::Ok().json(response))
 }
 
-#[get("/errors/{id}")]
-pub async fn get_error(
+#[get("/projects/{project_id}/errors/{id}")]
+pub async fn get_project_error(
     db: web::Data<sea_orm::DatabaseConnection>,
-    path: web::Path<i32>,
-    user_id: web::ReqData<i32>,
-) -> impl Responder {
-    let user_id = *user_id;
+    path: web::Path<(i32, i32)>,
+    auth_user: web::ReqData<i32>,
+) -> Result<HttpResponse, AppError> {
+    let (project_id, error_id) = path.into_inner();
+    let user_id = auth_user.into_inner();
 
-    let id = path.into_inner();
-    if let Some(l) = ErrorEntity::find_by_id(id)
+    let is_member = ProjectMemberEntity::find()
+        .filter(
+            Condition::all()
+                .add(project_member::Column::ProjectId.eq(project_id))
+                .add(project_member::Column::UserId.eq(user_id))
+        )
         .one(db.get_ref())
         .await
-        .unwrap()
-    {
-        HttpResponse::Ok().json(ErrorReportResponse {
-            id: l.id,
-            message: l.message,
-            stacktrace: l.stacktrace,
-            app_version: l.app_version,
-            timestamp: l.timestamp,
-            group_hash: l.group_hash,
-            replay: l.replay,
-            reported_by: l.reported_by,
-        })
-    } else {
-        HttpResponse::NotFound().body("Not Found")
+        .map_err(|err| {
+            log::error!("프로젝트 멤버십 확인 중 오류 발생: {}", err);
+            AppError::new(ErrorCode::DatabaseError)
+        })?;
+
+    if is_member.is_none() {
+        return Err(AppError::new(ErrorCode::NotEnoughPermission));
     }
+
+    let log = ErrorLogEntity::find()
+        .filter(
+            Condition::all()
+                .add(error_log::Column::Id.eq(error_id))
+                .add(error_log::Column::ProjectId.eq(project_id))
+        )
+        .one(db.get_ref())
+        .await
+        .map_err(|_| AppError::new(ErrorCode::DatabaseError))?
+        .ok_or_else(|| AppError::new(ErrorCode::ErrorLogNotFound))?;
+
+    Ok(HttpResponse::Ok().json(ErrorReportResponse {
+        id: log.id,
+        message: log.message,
+        stacktrace: log.stacktrace,
+        app_version: log.app_version,
+        timestamp: log.timestamp,
+        group_hash: log.group_hash,
+        replay: log.replay,
+        issue_id: log.issue_id,
+    }))
 }

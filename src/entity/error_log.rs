@@ -19,7 +19,7 @@ pub struct Model {
     pub user_agent: Option<String>,
     pub project_id: i32,
     pub issue_id: Option<i32>,  // 이슈와 연결
-    pub reported_by: Option<i32>,  // 보고한 사용자
+    pub reported_by: Option<i32>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

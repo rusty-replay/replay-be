@@ -46,8 +46,16 @@ async fn main() -> anyhow::Result<()> {
     HttpServer::new(move || {
         let cors = Cors::default()
             .allow_any_origin()
-            .allowed_methods(vec!["GET", "POST", "OPTIONS"])
-            .allowed_headers(vec![header::CONTENT_TYPE, header::AUTHORIZATION])
+            .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+            .allowed_headers(vec![
+                header::CONTENT_TYPE,
+                header::AUTHORIZATION,
+                header::ACCEPT,
+                header::ORIGIN,
+                header::ACCESS_CONTROL_REQUEST_METHOD,
+                header::ACCESS_CONTROL_REQUEST_HEADERS
+            ])
+            .supports_credentials()
             .max_age(3600);
 
         App::new()
@@ -62,12 +70,14 @@ async fn main() -> anyhow::Result<()> {
                     // .wrap(AuthMiddleware)
                     .wrap(from_fn(auth_middleware))
                     .service(api::get_me)
-                    .service(api::report_error)
-                    .service(api::list_errors)
-                    .service(api::get_error)
+
                     .service(api::create_project)
                     .service(api::list_user_projects)
                     .service(api::get_project)
+
+                    .service(api::get_project_error)
+                    .service(api::list_project_errors)
+                    .service(api::report_error)
             )
     })
         .bind(("127.0.0.1", 8080))?
