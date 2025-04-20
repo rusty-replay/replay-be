@@ -3,6 +3,7 @@ use bcrypt::{hash, verify, DEFAULT_COST};
 use chrono::Utc;
 use sea_orm::{DatabaseConnection, EntityTrait, Set, ActiveModelTrait, QueryFilter, ColumnTrait, TransactionTrait};
 use sea_query::Condition;
+use crate::model::global_error::{AppError, ErrorCode};
 use crate::entity::user::{self, Entity as UserEntity};
 use crate::model::auth::{RegisterRequest, LoginRequest, AuthResponse, RefreshTokenRequest, UserResponse, Claims};
 use crate::auth::jwt::JwtUtils;
@@ -11,8 +12,9 @@ use crate::auth::jwt::JwtUtils;
 pub async fn register(
     body: web::Json<RegisterRequest>,
     db: web::Data<DatabaseConnection>,
-) -> Result<HttpResponse, Error> {
-    let txn = db.begin().await?;
+) -> Result<HttpResponse, AppError> {
+    let txn = db.begin().await
+        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("트랜잭션 시작 실패: {}", e)))?;
 
     let existing_user = UserEntity::find()
         .filter(
@@ -21,17 +23,16 @@ pub async fn register(
                 .add(user::Column::Email.eq(&body.email))
         )
         .one(&txn)
-        .await?;
+        .await
+        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("사용자 조회 실패: {}", e)))?;
 
     if existing_user.is_some() {
         let _ = txn.rollback().await;
-        return Ok(HttpResponse::BadRequest().json(serde_json::json!({
-            "error": "Username or email already exists"
-        })));
+        return Err(AppError::new(ErrorCode::DuplicateAccountEmail));
     }
 
     let hashed_password = hash(&body.password, DEFAULT_COST)
-        .map_err(|_| actix_web::error::ErrorInternalServerError("Error hashing password"))?;
+        .map_err(|_| AppError::new(ErrorCode::InternalError))?;
 
     let new_user = user::ActiveModel {
         username: Set(body.username.clone()),
@@ -43,14 +44,16 @@ pub async fn register(
         ..Default::default()
     };
 
-    let user = new_user.insert(&txn).await?;
+    let user = new_user.insert(&txn).await
+        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("사용자 생성 실패: {}", e)))?;
 
     let token = JwtUtils::generate_token(user.id, &user.role)
-        .map_err(|_| actix_web::error::ErrorInternalServerError("Failed to generate token"))?;
+        .map_err(|_| AppError::new(ErrorCode::TokenGenerationFailed))?;
     let r_token = JwtUtils::generate_refresh_token(user.id)
-        .map_err(|_| actix_web::error::ErrorInternalServerError("Failed to generate refresh token"))?;
+        .map_err(|_| AppError::new(ErrorCode::TokenGenerationFailed))?;
 
-    txn.commit().await?;
+    txn.commit().await
+        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("트랜잭션 커밋 실패: {}", e)))?;
 
     Ok(HttpResponse::Created().json(AuthResponse {
         token,

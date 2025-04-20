@@ -1,90 +1,121 @@
-use serde::{Deserialize, Serialize};
+use actix_web::{HttpResponse, ResponseError};
+use thiserror::Error;
 use std::fmt;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {
-    // 인증 관련 에러
-    InvalidCredentials,
-    TokenExpired,
-    InvalidToken,
-    Unauthorized,
+    // 400 BAD REQUEST
+    ValidationError,
+    DuplicateAccountEmail,
+    InvalidPassword,
 
-    // 리소스 관련 에러
-    ResourceNotFound,
-    UserNotFound,
-    ProjectNotFound,
-    IssueNotFound,
+    // 401 UNAUTHORIZED
+    AuthenticationFailed,
+    ExpiredAuthToken,
+    InvalidAuthToken,
 
-    // 유효성 검사 에러
-    ValidationFailed,
-    InvalidInput,
+    // 403 FORBIDDEN
+    NotEnoughPermission,
 
-    // 데이터베이스 에러
+    // 404 NOT FOUND
+    MemberNotFound,
+    GroupNotFound,
+
+    // 500 SERVER ERRORS
     DatabaseError,
-    DuplicateEntry,
-
-    // 서버 에러
-    InternalServerError,
-
-    // 요청 관련 에러
-    RateLimitExceeded,
-    BadRequest,
+    InternalError,
+    TokenGenerationFailed,
 }
 
 impl ErrorCode {
     pub fn message(&self) -> &'static str {
         match self {
-            ErrorCode::InvalidCredentials => "Invalid email or password",
-            ErrorCode::TokenExpired => "Token has expired",
-            ErrorCode::InvalidToken => "Invalid token",
-            ErrorCode::Unauthorized => "Unauthorized access",
+            ErrorCode::ValidationError => "유효성 검증에 실패했습니다",
+            ErrorCode::DuplicateAccountEmail => "이미 등록된 이메일입니다. 로그인해주세요",
+            ErrorCode::InvalidPassword => "비밀번호는 최소 8자 이상이어야 합니다",
 
-            ErrorCode::ResourceNotFound => "Resource not found",
-            ErrorCode::UserNotFound => "User not found",
-            ErrorCode::ProjectNotFound => "Project not found",
-            ErrorCode::IssueNotFound => "Issue not found",
+            ErrorCode::AuthenticationFailed => "인증에 실패했습니다",
+            ErrorCode::ExpiredAuthToken => "로그인 토큰이 만료되었습니다",
+            ErrorCode::InvalidAuthToken => "유효하지 않은 로그인 토큰입니다",
 
-            ErrorCode::ValidationFailed => "Validation failed",
-            ErrorCode::InvalidInput => "Invalid input data",
+            ErrorCode::NotEnoughPermission => "권한이 부족합니다",
 
-            ErrorCode::DatabaseError => "Database error occurred",
-            ErrorCode::DuplicateEntry => "Resource already exists",
+            ErrorCode::MemberNotFound => "사용자를 찾을 수 없습니다",
+            ErrorCode::GroupNotFound => "유효하지 않은 그룹 ID입니다",
 
-            ErrorCode::InternalServerError => "Internal server error",
-
-            ErrorCode::RateLimitExceeded => "Too many requests",
-            ErrorCode::BadRequest => "Bad request",
+            ErrorCode::DatabaseError => "데이터베이스 오류가 발생했습니다",
+            ErrorCode::InternalError => "내부 서버 오류가 발생했습니다",
+            ErrorCode::TokenGenerationFailed => "토큰 생성에 실패했습니다",
         }
     }
 
-    pub fn status_code(&self) -> u16 {
+    pub fn status_code(&self) -> actix_web::http::StatusCode {
+        use actix_web::http::StatusCode;
+
         match self {
-            ErrorCode::InvalidCredentials => 401,
-            ErrorCode::TokenExpired => 401,
-            ErrorCode::InvalidToken => 401,
-            ErrorCode::Unauthorized => 401,
+            ErrorCode::ValidationError |
+            ErrorCode::DuplicateAccountEmail |
+            ErrorCode::InvalidPassword => StatusCode::BAD_REQUEST,
 
-            ErrorCode::ResourceNotFound => 404,
-            ErrorCode::UserNotFound => 404,
-            ErrorCode::ProjectNotFound => 404,
-            ErrorCode::IssueNotFound => 404,
+            ErrorCode::AuthenticationFailed |
+            ErrorCode::ExpiredAuthToken |
+            ErrorCode::InvalidAuthToken => StatusCode::UNAUTHORIZED,
 
-            ErrorCode::ValidationFailed => 400,
-            ErrorCode::InvalidInput => 400,
+            ErrorCode::NotEnoughPermission => StatusCode::FORBIDDEN,
 
-            ErrorCode::DatabaseError => 500,
-            ErrorCode::DuplicateEntry => 409,
+            ErrorCode::MemberNotFound |
+            ErrorCode::GroupNotFound => StatusCode::NOT_FOUND,
 
-            ErrorCode::InternalServerError => 500,
-
-            ErrorCode::RateLimitExceeded => 429,
-            ErrorCode::BadRequest => 400,
+            ErrorCode::DatabaseError |
+            ErrorCode::InternalError |
+            ErrorCode::TokenGenerationFailed => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
 
 impl fmt::Display for ErrorCode {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message())
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum AppError {
+    #[error("{0}")]
+    ApiError(ErrorCode, Option<String>),
+}
+
+impl AppError {
+    pub fn new(code: ErrorCode) -> Self {
+        AppError::ApiError(code, None)
+    }
+
+    pub fn with_detail(code: ErrorCode, detail: String) -> Self {
+        AppError::ApiError(code, Some(detail))
+    }
+}
+
+#[derive(serde::Serialize)]
+struct ErrorResponse {
+    code: String,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<String>,
+}
+
+impl ResponseError for AppError {
+    fn error_response(&self) -> HttpResponse {
+        match self {
+            AppError::ApiError(code, detail) => {
+                let response = ErrorResponse {
+                    code: format!("{:?}", code),
+                    message: code.message().to_string(),
+                    detail: detail.clone(),
+                };
+
+                HttpResponse::build(code.status_code())
+                    .json(response)
+            }
+        }
     }
 }
