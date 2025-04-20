@@ -39,28 +39,6 @@ async fn main() -> anyhow::Result<()> {
     Migrator::up(&db, None).await?;
     info!("마이그레이션 완료");
 
-    // let schema = Schema::new(DatabaseBackend::MySql);
-    // let create_table_stmt = schema
-    //     .create_table_from_entity(error_log::Entity)
-    //     .if_not_exists()
-    //     .to_string(MysqlQueryBuilder);
-    //
-    // db.execute(Statement::from_string(
-    //     DatabaseBackend::MySql,
-    //     create_table_stmt,
-    // ))
-    //     .await?;
-    //
-    // let create_user_table_stmt = schema
-    //     .create_table_from_entity(user::Entity)
-    //     .if_not_exists()
-    //     .to_string(MysqlQueryBuilder);
-    //
-    // db.execute(Statement::from_string(
-    //     DatabaseBackend::MySql,
-    //     create_user_table_stmt,
-    // )).await?;
-
     let db_data = Data::new(db);
 
     info!("서버 시작 중: http://127.0.0.1:8080");
