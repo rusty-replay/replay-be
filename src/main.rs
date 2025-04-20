@@ -66,6 +66,8 @@ async fn main() -> anyhow::Result<()> {
                     .service(api::list_errors)
                     .service(api::get_error)
                     .service(api::create_project)
+                    .service(api::list_user_projects)
+                    .service(api::get_project)
             )
     })
         .bind(("127.0.0.1", 8080))?

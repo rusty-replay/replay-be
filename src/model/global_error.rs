@@ -23,6 +23,7 @@ pub enum ErrorCode {
     // 404 NOT FOUND
     MemberNotFound,
     GroupNotFound,
+    ProjectNotFound,
 
     // 500 SERVER ERRORS
     DatabaseError,
@@ -48,6 +49,7 @@ impl ErrorCode {
 
             ErrorCode::MemberNotFound => "사용자를 찾을 수 없습니다",
             ErrorCode::GroupNotFound => "유효하지 않은 그룹 ID입니다",
+            ErrorCode::ProjectNotFound => "유효하지 않은 프로젝트 ID입니다",
 
             ErrorCode::DatabaseError => "데이터베이스 오류가 발생했습니다",
             ErrorCode::InternalError => "내부 서버 오류가 발생했습니다",
@@ -72,6 +74,7 @@ impl ErrorCode {
 
             ErrorCode::NotEnoughPermission => StatusCode::FORBIDDEN,
 
+            ErrorCode::ProjectNotFound |
             ErrorCode::MemberNotFound |
             ErrorCode::GroupNotFound => StatusCode::NOT_FOUND,
 

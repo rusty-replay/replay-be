@@ -2398,6 +2398,7 @@ dependencies = [
  "dotenv",
  "env_logger",
  "jsonwebtoken",
+ "log",
  "regex",
  "sea-orm",
  "sea-orm-macros",

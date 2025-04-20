@@ -1,9 +1,10 @@
 use actix_web::{delete, get, post, put, web, HttpResponse, Responder};
-use sea_orm::{Set, ActiveModelTrait, EntityTrait, QueryFilter};
+use sea_orm::{Set, ActiveModelTrait, EntityTrait, QueryFilter, ColumnTrait};
 use sea_query::Condition;
 use crate::entity::project_member::{Entity as ProjectMemberEntity, ActiveModel as ProjectMemberActiveModel};
 use crate::entity::project::{Entity as ProjectEntity, ActiveModel as ProjectActiveModel};
 use crate::entity::{project_member, user};
+use crate::model::global_error::{AppError, ErrorCode};
 use crate::model::project::{ProjectCreateRequest, ProjectDetailResponse, ProjectMemberResponse, ProjectResponse, ProjectUpdateRequest};
 
 #[post("/projects")]
@@ -46,111 +47,125 @@ pub async fn create_project(
     })
 }
 
-// #[get("/projects")]
-// pub async fn list_user_projects(
-//     db: web::Data<sea_orm::DatabaseConnection>,
-//     auth_user: web::ReqData<i32>,
-// ) -> impl Responder {
-//     // 유저가 속한 프로젝트 ID 조회
-//     let user_id = *auth_user.into_inner();
-//
-//     let projects = ProjectMemberEntity::find()
-//         .filter(project_member::Column::UserId.eq(user_id))
-//         .find_with_related(ProjectEntity)
-//         .all(db.get_ref())
-//         .await
-//         .unwrap();
-//
-//     let response: Vec<ProjectResponse> = projects
-//         .into_iter()
-//         .map(|(_, projects)| {
-//             let project = projects.first().unwrap();
-//             ProjectResponse {
-//                 id: project.id,
-//                 name: project.name.clone(),
-//                 api_key: project.api_key.clone(),
-//                 description: project.description.clone(),
-//                 created_at: project.created_at,
-//                 updated_at: project.updated_at,
-//             }
-//         })
-//         .collect();
-//
-//     HttpResponse::Ok().json(response)
-// }
-//
-// // 3. 프로젝트 상세 조회
-// #[get("/projects/{id}")]
-// pub async fn get_project(
-//     db: web::Data<sea_orm::DatabaseConnection>,
-//     path: web::Path<i32>,
-//     auth_user: web::ReqData<i32>,
-// ) -> impl Responder {
-//     let project_id = path.into_inner();
-//     let user_id = *auth_user.into_inner();
-//
-//     // 사용자가 프로젝트의 멤버인지 확인
-//     let is_member = ProjectMemberEntity::find()
-//         .filter(
-//             Condition::all()
-//                 .add(project_member::Column::ProjectId.eq(project_id))
-//                 .add(project_member::Column::UserId.eq(user_id))
-//         )
-//         .one(db.get_ref())
-//         .await
-//         .unwrap()
-//         .is_some();
-//
-//     if !is_member {
-//         return HttpResponse::Forbidden().body("You don't have access to this project");
-//     }
-//
-//     // 프로젝트 정보 조회
-//     let project = ProjectEntity::find_by_id(project_id)
-//         .one(db.get_ref())
-//         .await
-//         .unwrap();
-//
-//     if let Some(project) = project {
-//         // 프로젝트 멤버 정보 조회
-//         let members = ProjectMemberEntity::find()
-//             .filter(project_member::Column::ProjectId.eq(project_id))
-//             .find_with_related(user::Entity)
-//             .all(db.get_ref())
-//             .await
-//             .unwrap();
-//
-//         let member_responses: Vec<ProjectMemberResponse> = members
-//             .into_iter()
-//             .map(|(member, users)| {
-//                 let user = users.first().unwrap();
-//                 ProjectMemberResponse {
-//                     user_id: user.id,
-//                     username: user.username.clone(),
-//                     email: user.email.clone(),
-//                     role: member.role.clone(),
-//                     joined_at: member.joined_at,
-//                 }
-//             })
-//             .collect();
-//
-//         HttpResponse::Ok().json(ProjectDetailResponse {
-//             project: ProjectResponse {
-//                 id: project.id,
-//                 name: project.name,
-//                 api_key: project.api_key,
-//                 description: project.description,
-//                 created_at: project.created_at,
-//                 updated_at: project.updated_at,
-//             },
-//             members: member_responses,
-//         })
-//     } else {
-//         HttpResponse::NotFound().body("Project not found")
-//     }
-// }
-//
-// // 4. 프로젝트 업데이트
+#[get("/projects")]
+pub async fn list_user_projects(
+    db: web::Data<sea_orm::DatabaseConnection>,
+    auth_user: web::ReqData<i32>,
+) -> impl Responder {
+    let user_id = auth_user.into_inner();
+
+    let projects = ProjectMemberEntity::find()
+        .filter(project_member::Column::UserId.eq(user_id))
+        .find_with_related(ProjectEntity)
+        .all(db.get_ref())
+        .await
+        .unwrap();
+
+    let response: Vec<ProjectResponse> = projects
+        .into_iter()
+        .map(|(_, projects)| {
+            let project = projects.first().unwrap();
+            ProjectResponse {
+                id: project.id,
+                name: project.name.clone(),
+                api_key: project.api_key.clone(),
+                description: project.description.clone(),
+                created_at: project.created_at,
+                updated_at: project.updated_at,
+            }
+        })
+        .collect();
+
+    HttpResponse::Ok().json(response)
+}
+
+#[get("/projects/{id}")]
+pub async fn get_project(
+    db: web::Data<sea_orm::DatabaseConnection>,
+    path: web::Path<i32>,
+    auth_user: web::ReqData<i32>,
+) -> Result<HttpResponse, AppError> {
+    let project_id = path.into_inner();
+    let user_id = auth_user.into_inner();
+
+    let project_exists = ProjectEntity::find_by_id(project_id)
+        .one(db.get_ref())
+        .await
+        .map_err(|err| {
+            log::error!("프로젝트 존재 확인 중 오류 발생: {}", err);
+            AppError::new(ErrorCode::DatabaseError)
+        })?
+        .is_some();
+
+    if !project_exists {
+        return Err(AppError::new(ErrorCode::ProjectNotFound));
+    }
+
+    let is_member = ProjectMemberEntity::find()
+        .filter(
+            Condition::all()
+                .add(project_member::Column::ProjectId.eq(project_id))
+                .add(project_member::Column::UserId.eq(user_id))
+        )
+        .one(db.get_ref())
+        .await
+        .map_err(|err| {
+            log::error!("프로젝트 멤버십 확인 중 오류 발생: {}", err);
+            AppError::new(ErrorCode::DatabaseError)
+        })?;
+
+    if is_member.is_none() {
+        return Err(AppError::new(ErrorCode::NotEnoughPermission));
+    }
+
+    let project = ProjectEntity::find_by_id(project_id)
+        .one(db.get_ref())
+        .await
+        .map_err(|err| {
+            log::error!("프로젝트 조회 중 오류 발생: {}", err);
+            AppError::new(ErrorCode::DatabaseError)
+        })?
+        .ok_or_else(|| AppError::new(ErrorCode::ProjectNotFound))?;
+
+    let members = ProjectMemberEntity::find()
+        .filter(project_member::Column::ProjectId.eq(project_id))
+        .find_with_related(user::Entity)
+        .all(db.get_ref())
+        .await
+        .map_err(|err| {
+            log::error!("프로젝트 멤버 목록 조회 중 오류 발생: {}", err);
+            AppError::new(ErrorCode::DatabaseError)
+        })?;
+
+    let member_responses: Vec<ProjectMemberResponse> = members
+        .into_iter()
+        .filter_map(|(member, users)| {
+            // 사용자 정보가 있는 경우에만 처리
+            users.first().map(|user| {
+                ProjectMemberResponse {
+                    user_id: user.id,
+                    username: user.username.clone(),
+                    email: user.email.clone(),
+                    role: member.role.clone(),
+                    joined_at: member.joined_at,
+                }
+            })
+        })
+        .collect();
+
+    Ok(HttpResponse::Ok().json(ProjectDetailResponse {
+        project: ProjectResponse {
+            id: project.id,
+            name: project.name,
+            api_key: project.api_key,
+            description: project.description,
+            created_at: project.created_at,
+            updated_at: project.updated_at,
+        },
+        members: member_responses,
+    }))
+}
+
 // #[put("/projects/{id}")]
 // pub async fn update_project(
 //     db: web::Data<sea_orm::DatabaseConnection>,
@@ -396,16 +411,4 @@ pub async fn create_project(
 //     } else {
 //         HttpResponse::NotFound().body("Member not found")
 //     }
-// }
-
-// 라우터 구성
-// pub fn configure_routes(cfg: &mut web::ServiceConfig) {
-//     cfg.service(health_check)
-//         .service(create_project)
-//         .service(list_user_projects)
-//         .service(get_project)
-//         .service(update_project)
-//         .service(delete_project)
-//         .service(invite_user)
-//         .service(remove_member);
 // }
