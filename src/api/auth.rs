@@ -82,6 +82,8 @@ pub async fn login(
     body: web::Json<LoginRequest>,
     db: web::Data<DatabaseConnection>,
 ) -> impl Responder {
+    let txn = db.begin().await?;
+
     let user_result = UserEntity::find()
         .filter(user::Column::Email.eq(&body.email))
         .one(db.get_ref())
