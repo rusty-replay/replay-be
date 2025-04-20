@@ -1,7 +1,8 @@
+
 use actix_web::{get, post, web, HttpResponse, Responder};
 use sea_orm::{EntityTrait, Set, ActiveModelTrait, QueryOrder};
 use crate::entity::error_log::{self, ActiveModel, Entity as ErrorEntity};
-use crate::model::{ErrorReportRequest, ErrorReportResponse};
+use crate::model::error::{ErrorReportRequest, ErrorReportResponse};
 use sha2::{Sha256, Digest};
 
 fn calculate_group_hash(message: &str, stack: &str) -> String {

@@ -27,3 +27,6 @@ uuid = { version = "1.16.0", features = ["v4"] }
 sea-query = "0.32.3"
 actix-cors = "0.7.1"
 tracing-bunyan-formatter = "0.3.10"
+jsonwebtoken = "9.3.1"
+chrono = "0.4.40"
+bcrypt = "0.17.0"
