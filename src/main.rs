@@ -45,6 +45,7 @@ async fn main() -> anyhow::Result<()> {
     info!("서버 시작 중: http://127.0.0.1:8080");
     HttpServer::new(move || {
         let cors = Cors::default()
+            .allowed_origin("http://localhost:3000")
             .allow_any_origin()
             .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
             .allowed_headers(vec![
@@ -65,6 +66,9 @@ async fn main() -> anyhow::Result<()> {
             .service(api::register)
             .service(api::login)
             .service(api::refresh_token)
+
+            .service(api::report_batch_errors)
+            .service(api::report_error)
             .service(
                 scope("/api")
                     // .wrap(AuthMiddleware)
@@ -77,7 +81,7 @@ async fn main() -> anyhow::Result<()> {
 
                     .service(api::get_project_error)
                     .service(api::list_project_errors)
-                    .service(api::report_error)
+
             )
     })
         .bind(("127.0.0.1", 8080))?

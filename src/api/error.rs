@@ -8,7 +8,7 @@ use crate::entity::project::{Entity as ProjectEntity};
 use crate::entity::project_member::{self, Entity as ProjectMemberEntity};
 use crate::entity::user::{Entity as UserEntity};
 use crate::entity::error_log::{Entity as ErrorLogEntity};
-use crate::model::error::{ErrorReportListResponse, ErrorReportRequest, ErrorReportResponse};
+use crate::model::error::{BatchErrorReportRequest, BatchErrorReportResponse, ErrorReportListResponse, ErrorReportRequest, ErrorReportResponse};
 use sha2::{Sha256, Digest};
 use crate::entity::{issue, project};
 use crate::model::global_error::{AppError, ErrorCode};
@@ -119,6 +119,74 @@ async fn create_or_update_issue(db: &DatabaseConnection, project_id: i32, group_
     }
 }
 
+#[post("/batch-errors")]
+pub async fn report_batch_errors(
+    body: web::Json<BatchErrorReportRequest>,
+    db: web::Data<DatabaseConnection>,
+) -> Result<HttpResponse, AppError> {
+    println!("Batch error report: {:?}", body);
+
+    let mut success_count = 0;
+    let mut errors = Vec::new();
+
+    println!("Processing {} events", body.events.len());
+
+    for (index, event) in body.events.iter().enumerate() {
+        match process_event(db.get_ref(), event).await {
+            Ok(_) => success_count += 1,
+            Err(e) => errors.push(format!("이벤트 #{} 처리 중 오류: {}", index, e)),
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(BatchErrorReportResponse {
+        processed: body.events.len(),
+        success: success_count,
+        errors,
+    }))
+}
+
+async fn process_event(
+    db: &DatabaseConnection,
+    event: &ErrorReportRequest,
+) -> Result<(), AppError> {
+    let project_id = find_project_by_api_key(db, &event.api_key).await?;
+
+    let group_hash = calculate_group_hash(&event.message, &event.stacktrace);
+
+    let issue_id = create_or_update_issue(db, project_id, &group_hash, &event.message).await?;
+
+    let now = Utc::now();
+
+    let new_log = ErrorLogActiveModel {
+        message: Set(event.message.clone()),
+        stacktrace: Set(event.stacktrace.clone()),
+        app_version: Set(event.app_version.clone()),
+        timestamp: Set(event.timestamp.clone()),
+        group_hash: Set(group_hash.clone()),
+        replay: Set(event.replay.clone()),
+        environment: Set(event.environment.clone().unwrap_or_else(|| "production".to_string())),
+        browser: Set(event.browser.clone()),
+        os: Set(event.os.clone()),
+        ip_address: Set(None),
+        user_agent: Set(event.user_agent.clone()),
+        project_id: Set(project_id),
+        issue_id: Set(Some(issue_id)),
+        reported_by: Set(event.user_id),
+        created_at: Set(now.into()),
+        updated_at: Set(now.into()),
+        ..Default::default()
+    };
+
+    // 데이터베이스에 저장
+    let _ = new_log.insert(db).await
+        .map_err(|e| {
+            log::error!("에러 로그 저장 중 오류 발생: {}", e);
+            AppError::new(ErrorCode::DatabaseError)
+        })?;
+
+    Ok(())
+}
+
 #[post("/errors")]
 pub async fn report_error(
     body: web::Json<ErrorReportRequest>,
@@ -132,7 +200,6 @@ pub async fn report_error(
 
     let now = Utc::now();
 
-    // 에러 로그 생성
     let new_log = ErrorLogActiveModel {
         message: Set(body.message.clone()),
         stacktrace: Set(body.stacktrace.clone()),
@@ -153,14 +220,12 @@ pub async fn report_error(
         ..Default::default()
     };
 
-    // 데이터베이스에 저장
     let inserted = new_log.insert(db.get_ref()).await
         .map_err(|e| {
             log::error!("에러 로그 저장 중 오류 발생: {}", e);
             AppError::new(ErrorCode::DatabaseError)
         })?;
 
-    // 응답 반환
     Ok(HttpResponse::Created().json(ErrorReportListResponse {
         id: inserted.id,
         message: inserted.message,
@@ -173,39 +238,6 @@ pub async fn report_error(
         os: inserted.os,
     }))
 }
-
-
-// #[post("/errors")]
-// pub async fn report_error(
-//     body: web::Json<ErrorReportRequest>,
-//     db: web::Data<sea_orm::DatabaseConnection>,
-//     user_id: web::ReqData<i32>,
-// ) -> impl Responder {
-//     let user_id = *user_id;
-//     let group_hash = calculate_group_hash(&body.message, &body.stacktrace);
-//
-//     let new_log = ActiveModel {
-//         message: Set(body.message.clone()),
-//         stacktrace: Set(body.stacktrace.clone()),
-//         app_version: Set(body.app_version.clone()),
-//         timestamp: Set(body.timestamp.clone()),
-//         group_hash: Set(group_hash.clone()),
-//         replay: Set(body.replay.clone().into()),
-//         ..Default::default()
-//     };
-//
-//     let inserted = new_log.insert(db.get_ref()).await.unwrap();
-//
-//     HttpResponse::Ok().json(ErrorReportResponse {
-//         id: inserted.id,
-//         message: inserted.message,
-//         stacktrace: inserted.stacktrace,
-//         app_version: inserted.app_version,
-//         timestamp: inserted.timestamp,
-//         group_hash,
-//         replay: inserted.replay,
-//     })
-// }
 
 #[get("/projects/{project_id}/errors")]
 pub async fn list_project_errors(

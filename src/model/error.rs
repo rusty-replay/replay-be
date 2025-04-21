@@ -52,3 +52,33 @@ pub struct ErrorReportListResponse {
     pub browser: Option<String>,
     pub os: Option<String>,
 }
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchErrorReportRequest {
+    pub events: Vec<ErrorReportRequest>,
+}
+
+// #[derive(Debug, Deserialize, ToSchema)]
+// #[serde(rename_all = "camelCase")]
+// pub struct BatchedEvent {
+//     pub id: String,
+//     pub timestamp: String,
+//     pub message: String,
+//     pub stacktrace: String,
+//     pub replay: Value,
+//     pub environment: String,
+//     pub browser: Option<String>,
+//     pub os: Option<String>,
+//     pub user_agent: Option<String>,
+//     pub user_id: Option<i32>,
+//     pub additional_info: Option<Value>,
+// }
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchErrorReportResponse {
+    pub processed: usize,
+    pub success: usize,
+    pub errors: Vec<String>,
+}
