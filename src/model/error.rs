@@ -28,5 +28,27 @@ pub struct ErrorReportResponse {
     pub timestamp: String,
     pub group_hash: String,
     pub replay: Value,
-    pub issue_id: Option<i32>, // 연결된 이슈 ID
+    pub environment: String,
+    pub browser: Option<String>,
+    pub os: Option<String>,
+    pub ip_address: Option<String>,
+    pub user_agent: Option<String>,
+    pub project_id: i32,
+    pub issue_id: Option<i32>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ErrorReportListResponse {
+    pub id: i32,
+    pub message: String,
+    pub stacktrace: String,
+    pub app_version: String,
+    pub timestamp: String,
+    pub group_hash: String,
+    pub issue_id: Option<i32>,
+    pub browser: Option<String>,
+    pub os: Option<String>,
 }

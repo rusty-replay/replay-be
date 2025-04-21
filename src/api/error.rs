@@ -8,7 +8,7 @@ use crate::entity::project::{Entity as ProjectEntity};
 use crate::entity::project_member::{self, Entity as ProjectMemberEntity};
 use crate::entity::user::{Entity as UserEntity};
 use crate::entity::error_log::{Entity as ErrorLogEntity};
-use crate::model::error::{ErrorReportRequest, ErrorReportResponse};
+use crate::model::error::{ErrorReportListResponse, ErrorReportRequest, ErrorReportResponse};
 use sha2::{Sha256, Digest};
 use crate::entity::{issue, project};
 use crate::model::global_error::{AppError, ErrorCode};
@@ -122,7 +122,7 @@ async fn create_or_update_issue(db: &DatabaseConnection, project_id: i32, group_
 #[post("/errors")]
 pub async fn report_error(
     body: web::Json<ErrorReportRequest>,
-    db: web::Data<sea_orm::DatabaseConnection>,
+    db: web::Data<DatabaseConnection>,
 ) -> Result<HttpResponse, AppError> {
     let project_id = find_project_by_api_key(db.get_ref(), &body.api_key).await?;
 
@@ -161,15 +161,16 @@ pub async fn report_error(
         })?;
 
     // 응답 반환
-    Ok(HttpResponse::Created().json(ErrorReportResponse {
+    Ok(HttpResponse::Created().json(ErrorReportListResponse {
         id: inserted.id,
         message: inserted.message,
         stacktrace: inserted.stacktrace,
         app_version: inserted.app_version,
         timestamp: inserted.timestamp,
         group_hash,
-        replay: inserted.replay,
         issue_id: Some(issue_id),
+        browser: inserted.browser,
+        os: inserted.os,
     }))
 }
 
@@ -208,7 +209,7 @@ pub async fn report_error(
 
 #[get("/projects/{project_id}/errors")]
 pub async fn list_project_errors(
-    db: web::Data<sea_orm::DatabaseConnection>,
+    db: web::Data<DatabaseConnection>,
     path: web::Path<i32>,
     auth_user: web::ReqData<i32>,
 ) -> Result<HttpResponse, AppError> {
@@ -240,17 +241,18 @@ pub async fn list_project_errors(
         .await
         .map_err(|_| AppError::new(ErrorCode::DatabaseError))?;
 
-    let response: Vec<ErrorReportResponse> = logs
+    let response: Vec<ErrorReportListResponse> = logs
         .into_iter()
-        .map(|l| ErrorReportResponse {
+        .map(|l| ErrorReportListResponse {
             id: l.id,
             message: l.message,
             stacktrace: l.stacktrace,
             app_version: l.app_version,
             timestamp: l.timestamp,
             group_hash: l.group_hash,
-            replay: l.replay,
             issue_id: l.issue_id,
+            browser: l.browser,
+            os: l.os,
         })
         .collect();
 
@@ -302,6 +304,14 @@ pub async fn get_project_error(
         timestamp: log.timestamp,
         group_hash: log.group_hash,
         replay: log.replay,
+        environment: log.environment,
+        browser: log.browser,
+        os: log.os,
+        ip_address: log.ip_address,
+        user_agent: log.user_agent,
+        project_id: log.project_id,
         issue_id: log.issue_id,
+        created_at: log.created_at.to_string(),
+        updated_at: log.updated_at.to_string(),
     }))
 }
