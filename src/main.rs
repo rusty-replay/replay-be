@@ -42,7 +42,7 @@ async fn main() -> anyhow::Result<()> {
 
     let db_data = Data::new(db);
 
-    info!("서버 시작 중: http://127.0.0.1:8080");
+    info!("서버 시작 중: http://127.0.0.1:8081");
     HttpServer::new(move || {
         let cors = Cors::default()
             .allowed_origin("http://localhost:3000")
@@ -85,7 +85,7 @@ async fn main() -> anyhow::Result<()> {
 
             )
     })
-        .bind(("127.0.0.1", 8080))?
+        .bind(("127.0.0.1", 8081))?
         .run()
         .await?;
 
