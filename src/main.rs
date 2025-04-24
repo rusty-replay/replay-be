@@ -9,7 +9,7 @@ use actix_cors::Cors;
 use actix_web::{App, HttpServer};
 use actix_web::http::header;
 use actix_web::middleware::from_fn;
-use actix_web::web::{scope, Data};
+use actix_web::web::{scope, Data, JsonConfig};
 use db::init_db;
 use dotenv::dotenv;
 use sea_orm::{Schema, DatabaseBackend, ConnectionTrait, Statement};
@@ -61,6 +61,7 @@ async fn main() -> anyhow::Result<()> {
             .max_age(3600);
 
         App::new()
+            .app_data(JsonConfig::default().limit(10 * 1024 * 1024))
             .wrap(cors)
             .app_data(db_data.clone())
             .service(api::health_check)
