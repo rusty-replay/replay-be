@@ -150,34 +150,11 @@ async fn process_event(
     event: &ErrorReportRequest,
 ) -> Result<(), AppError> {
     let project_id = find_project_by_api_key(db, &event.api_key).await?;
-
     let group_hash = calculate_group_hash(&event.message, &event.stacktrace);
-
     let issue_id = create_or_update_issue(db, project_id, &group_hash, &event.message).await?;
 
-    let now = Utc::now();
+    let new_log = ErrorLogActiveModel::new_from_event(event, project_id, issue_id, group_hash);
 
-    let new_log = ErrorLogActiveModel {
-        message: Set(event.message.clone()),
-        stacktrace: Set(event.stacktrace.clone()),
-        app_version: Set(event.app_version.clone()),
-        timestamp: Set(event.timestamp.clone()),
-        group_hash: Set(group_hash.clone()),
-        replay: Set(event.replay.clone()),
-        environment: Set(event.environment.clone().unwrap_or_else(|| "production".to_string())),
-        browser: Set(event.browser.clone()),
-        os: Set(event.os.clone()),
-        ip_address: Set(None),
-        user_agent: Set(event.user_agent.clone()),
-        project_id: Set(project_id),
-        issue_id: Set(Some(issue_id)),
-        reported_by: Set(event.user_id),
-        created_at: Set(now.into()),
-        updated_at: Set(now.into()),
-        ..Default::default()
-    };
-
-    // 데이터베이스에 저장
     let _ = new_log.insert(db).await
         .map_err(|e| {
             log::error!("에러 로그 저장 중 오류 발생: {}", e);
@@ -193,32 +170,14 @@ pub async fn report_error(
     db: web::Data<DatabaseConnection>,
 ) -> Result<HttpResponse, AppError> {
     let project_id = find_project_by_api_key(db.get_ref(), &body.api_key).await?;
-
     let group_hash = calculate_group_hash(&body.message, &body.stacktrace);
-
     let issue_id = create_or_update_issue(db.get_ref(), project_id, &group_hash, &body.message).await?;
-
-    let now = Utc::now();
-
-    let new_log = ErrorLogActiveModel {
-        message: Set(body.message.clone()),
-        stacktrace: Set(body.stacktrace.clone()),
-        app_version: Set(body.app_version.clone()),
-        timestamp: Set(body.timestamp.clone()),
-        group_hash: Set(group_hash.clone()),
-        replay: Set(body.replay.clone().into()),
-        environment: Set(body.environment.clone().unwrap_or_else(|| "production".to_string())),
-        browser: Set(body.browser.clone()),
-        os: Set(body.os.clone()),
-        ip_address: Set(None),
-        user_agent: Set(body.user_agent.clone()),
-        project_id: Set(project_id),
-        issue_id: Set(Some(issue_id)),
-        reported_by: Set(body.user_id),
-        created_at: Set(now.into()),
-        updated_at: Set(now.into()),
-        ..Default::default()
-    };
+    let new_log = ErrorLogActiveModel::new_from_event(
+        &body,
+        project_id,
+        issue_id,
+        group_hash.clone(),
+    );
 
     let inserted = new_log.insert(db.get_ref()).await
         .map_err(|e| {
@@ -226,17 +185,7 @@ pub async fn report_error(
             AppError::new(ErrorCode::DatabaseError)
         })?;
 
-    Ok(HttpResponse::Created().json(ErrorReportListResponse {
-        id: inserted.id,
-        message: inserted.message,
-        stacktrace: inserted.stacktrace,
-        app_version: inserted.app_version,
-        timestamp: inserted.timestamp,
-        group_hash,
-        issue_id: Some(issue_id),
-        browser: inserted.browser,
-        os: inserted.os,
-    }))
+    Ok(HttpResponse::Created().json(ErrorReportListResponse::new(&inserted)))
 }
 
 #[get("/projects/{project_id}/errors")]
@@ -275,17 +224,7 @@ pub async fn list_project_errors(
 
     let response: Vec<ErrorReportListResponse> = logs
         .into_iter()
-        .map(|l| ErrorReportListResponse {
-            id: l.id,
-            message: l.message,
-            stacktrace: l.stacktrace,
-            app_version: l.app_version,
-            timestamp: l.timestamp,
-            group_hash: l.group_hash,
-            issue_id: l.issue_id,
-            browser: l.browser,
-            os: l.os,
-        })
+        .map(|l| ErrorReportListResponse::new(&l))
         .collect();
 
     Ok(HttpResponse::Ok().json(response))
@@ -293,7 +232,7 @@ pub async fn list_project_errors(
 
 #[get("/projects/{project_id}/errors/{id}")]
 pub async fn get_project_error(
-    db: web::Data<sea_orm::DatabaseConnection>,
+    db: web::Data<DatabaseConnection>,
     path: web::Path<(i32, i32)>,
     auth_user: web::ReqData<i32>,
 ) -> Result<HttpResponse, AppError> {
@@ -328,22 +267,6 @@ pub async fn get_project_error(
         .map_err(|_| AppError::new(ErrorCode::DatabaseError))?
         .ok_or_else(|| AppError::new(ErrorCode::ErrorLogNotFound))?;
 
-    Ok(HttpResponse::Ok().json(ErrorReportResponse {
-        id: log.id,
-        message: log.message,
-        stacktrace: log.stacktrace,
-        app_version: log.app_version,
-        timestamp: log.timestamp,
-        group_hash: log.group_hash,
-        replay: log.replay,
-        environment: log.environment,
-        browser: log.browser,
-        os: log.os,
-        ip_address: log.ip_address,
-        user_agent: log.user_agent,
-        project_id: log.project_id,
-        issue_id: log.issue_id,
-        created_at: log.created_at.to_string(),
-        updated_at: log.updated_at.to_string(),
-    }))
+
+    Ok(HttpResponse::Ok().json(ErrorReportResponse::from(log)))
 }

@@ -1,5 +1,8 @@
+use chrono::Utc;
 use sea_orm::entity::prelude::*;
+use sea_orm::Set;
 use serde::{Deserialize, Serialize};
+use crate::model::error::ErrorReportRequest;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "error_logs")]
@@ -67,3 +70,34 @@ impl Related<super::user::Entity> for Entity {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
+
+impl ActiveModel {
+    pub fn new_from_event(
+        event: &ErrorReportRequest,
+        project_id: i32,
+        issue_id: i32,
+        group_hash: String,
+    ) -> Self {
+        let now = Utc::now();
+
+        Self {
+            message: Set(event.message.clone()),
+            stacktrace: Set(event.stacktrace.clone()),
+            app_version: Set(event.app_version.clone()),
+            timestamp: Set(event.timestamp.clone()),
+            group_hash: Set(group_hash),
+            replay: Set(event.replay.clone()),
+            environment: Set(event.environment.clone().unwrap_or_else(|| "production".to_string())),
+            browser: Set(event.browser.clone()),
+            os: Set(event.os.clone()),
+            ip_address: Set(None),
+            user_agent: Set(event.user_agent.clone()),
+            project_id: Set(project_id),
+            issue_id: Set(Some(issue_id)),
+            reported_by: Set(event.user_id),
+            created_at: Set(now.into()),
+            updated_at: Set(now.into()),
+            ..Default::default()
+        }
+    }
+}
