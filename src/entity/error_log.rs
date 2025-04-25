@@ -72,7 +72,7 @@ impl Related<super::user::Entity> for Entity {
 impl ActiveModelBehavior for ActiveModel {}
 
 impl ActiveModel {
-    pub fn new_from_event(
+    pub fn from_error_event(
         event: &ErrorReportRequest,
         project_id: i32,
         issue_id: i32,

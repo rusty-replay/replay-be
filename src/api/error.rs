@@ -153,7 +153,7 @@ async fn process_event(
     let group_hash = calculate_group_hash(&event.message, &event.stacktrace);
     let issue_id = create_or_update_issue(db, project_id, &group_hash, &event.message).await?;
 
-    let new_log = ErrorLogActiveModel::new_from_event(event, project_id, issue_id, group_hash);
+    let new_log = ErrorLogActiveModel::from_error_event(event, project_id, issue_id, group_hash);
 
     let _ = new_log.insert(db).await
         .map_err(|e| {
@@ -172,7 +172,7 @@ pub async fn report_error(
     let project_id = find_project_by_api_key(db.get_ref(), &body.api_key).await?;
     let group_hash = calculate_group_hash(&body.message, &body.stacktrace);
     let issue_id = create_or_update_issue(db.get_ref(), project_id, &group_hash, &body.message).await?;
-    let new_log = ErrorLogActiveModel::new_from_event(
+    let new_log = ErrorLogActiveModel::from_error_event(
         &body,
         project_id,
         issue_id,
