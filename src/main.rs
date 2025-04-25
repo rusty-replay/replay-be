@@ -4,6 +4,7 @@ mod model;
 mod entity;
 mod auth;
 mod migration;
+mod util;
 
 use actix_cors::Cors;
 use actix_web::{App, HttpServer};

@@ -1,7 +1,8 @@
-
+use std::env;
 use actix_web::{get, post, web, HttpResponse, Responder};
 use chrono::Utc;
-use sea_orm::{EntityTrait, Set, ActiveModelTrait, QueryOrder, DatabaseConnection, QueryFilter, Condition, ColumnTrait, JoinType};
+use once_cell::sync::Lazy;
+use sea_orm::{EntityTrait, Set, ActiveModelTrait, QueryOrder, DatabaseConnection, QueryFilter, Condition, ColumnTrait, JoinType, PaginatorTrait};
 use crate::entity::error_log::{self, ActiveModel as ErrorLogActiveModel, Entity as ErrorEntity};
 use crate::entity::issue::{ActiveModel as IssueActiveModel, Entity as IssueEntity};
 use crate::entity::project::{Entity as ProjectEntity};
@@ -10,8 +11,14 @@ use crate::entity::user::{Entity as UserEntity};
 use crate::entity::error_log::{Entity as ErrorLogEntity};
 use crate::model::error::{BatchErrorReportRequest, BatchErrorReportResponse, ErrorReportListResponse, ErrorReportRequest, ErrorReportResponse};
 use sha2::{Sha256, Digest};
+use crate::util::slack::send_slack_alert;
 use crate::entity::{issue, project};
 use crate::model::global_error::{AppError, ErrorCode};
+
+static SLACK_WEBHOOK_URL: Lazy<String> = Lazy::new(|| {
+    env::var("SLACK_WEBHOOK_URL").expect("SLACK_WEBHOOK_URL 환경 변수가 설정되어야 합니다.")
+});
+const ERROR_THRESHOLD: usize = 1;
 
 #[utoipa::path(
     get,
@@ -128,13 +135,32 @@ pub async fn report_batch_errors(
 
     let mut success_count = 0;
     let mut errors = Vec::new();
+    let mut project_id_opt: Option<i32> = None;
 
     println!("Processing {} events", body.events.len());
 
     for (index, event) in body.events.iter().enumerate() {
         match process_event(db.get_ref(), event).await {
-            Ok(_) => success_count += 1,
+            Ok(pid) => {
+                success_count += 1;
+                project_id_opt = Some(pid);
+            },
             Err(e) => errors.push(format!("이벤트 #{} 처리 중 오류: {}", index, e)),
+        }
+    }
+
+    if let Some(project_id) = project_id_opt {
+        let count = ErrorLogEntity::find()
+            .filter(error_log::Column::ProjectId.eq(project_id))
+            .count(db.get_ref())
+            .await
+            .unwrap_or(0);
+
+        if count >= ERROR_THRESHOLD as u64 {
+            let _ = send_slack_alert(
+                &SLACK_WEBHOOK_URL,
+                &format!("🚨 Project {} 에 에러가 {}개 이상 발생했습니다.", project_id, count),
+            ).await;
         }
     }
 
@@ -148,7 +174,7 @@ pub async fn report_batch_errors(
 async fn process_event(
     db: &DatabaseConnection,
     event: &ErrorReportRequest,
-) -> Result<(), AppError> {
+) -> Result<i32, AppError> {
     let project_id = find_project_by_api_key(db, &event.api_key).await?;
     let group_hash = calculate_group_hash(&event.message, &event.stacktrace);
     let issue_id = create_or_update_issue(db, project_id, &group_hash, &event.message).await?;
@@ -161,7 +187,7 @@ async fn process_event(
             AppError::new(ErrorCode::DatabaseError)
         })?;
 
-    Ok(())
+    Ok(project_id)
 }
 
 #[post("/errors")]
