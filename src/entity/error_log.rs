@@ -87,7 +87,7 @@ impl ActiveModel {
             timestamp: Set(event.timestamp.clone()),
             group_hash: Set(group_hash),
             replay: Set(event.replay.clone()),
-            environment: Set(event.environment.clone().unwrap_or_else(|| "production".to_string())),
+            environment: Set(event.environment.clone().unwrap_or("production".to_string())),
             browser: Set(event.browser.clone()),
             os: Set(event.os.clone()),
             ip_address: Set(None),
