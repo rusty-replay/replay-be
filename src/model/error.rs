@@ -54,22 +54,6 @@ pub struct ErrorReportListResponse {
     pub os: Option<String>,
 }
 
-impl ErrorReportListResponse {
-    pub fn new(model: &ErrorLogModel) -> Self {
-        Self {
-            id: model.id,
-            message: model.message.clone(),
-            stacktrace: model.stacktrace.clone(),
-            app_version: model.app_version.clone(),
-            group_hash: model.group_hash.clone(),
-            timestamp: model.timestamp.clone(),
-            issue_id: model.issue_id,
-            browser: model.browser.clone(),
-            os: model.os.clone(),
-        }
-    }
-}
-
 impl From<ErrorLogModel> for ErrorReportListResponse {
     fn from(model: ErrorLogModel) -> Self {
         Self {
@@ -114,30 +98,6 @@ impl From<ErrorLogModel> for ErrorReportResponse {
         }
     }
 }
-
-// impl ErrorReportResponse {
-//     pub fn from(model: &ErrorLogModel) -> Self {
-//         Self {
-//             id: model.id,
-//             message: model.message.clone(),
-//             stacktrace: model.stacktrace.clone(),
-//             app_version: model.app_version.clone(),
-//             timestamp: model.timestamp.clone(),
-//             group_hash: model.group_hash.clone(),
-//             replay: model.replay.clone(),
-//             environment: model.environment.clone(),
-//             browser: model.browser.clone(),
-//             os: model.os.clone(),
-//             ip_address: model.ip_address.clone(),
-//             user_agent: model.user_agent.clone(),
-//             project_id: model.project_id,
-//             issue_id: model.issue_id,
-//             created_at: model.created_at.to_string(),
-//             updated_at: model.updated_at.to_string(),
-//         }
-//     }
-// }
-
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]

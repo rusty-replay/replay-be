@@ -185,7 +185,7 @@ pub async fn report_error(
             AppError::new(ErrorCode::DatabaseError)
         })?;
 
-    Ok(HttpResponse::Created().json(ErrorReportListResponse::new(&inserted)))
+    Ok(HttpResponse::Created().json(ErrorReportListResponse::from(inserted)))
 }
 
 #[get("/projects/{project_id}/errors")]
@@ -224,7 +224,9 @@ pub async fn list_project_errors(
 
     let response: Vec<ErrorReportListResponse> = logs
         .into_iter()
-        .map(|l| ErrorReportListResponse::new(&l))
+        .map(|l| ErrorReportListResponse::from(l))
+        // .map(Into::into)
+        // .map(|l| l.into())
         .collect();
 
     Ok(HttpResponse::Ok().json(response))
