@@ -2662,7 +2662,6 @@ dependencies = [
  "env_logger",
  "jsonwebtoken",
  "log",
- "once_cell",
  "regex",
  "reqwest",
  "sea-orm",

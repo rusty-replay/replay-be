@@ -1,7 +1,6 @@
 use std::env;
 use actix_web::{get, post, web, HttpResponse, Responder};
 use chrono::Utc;
-use once_cell::sync::Lazy;
 use sea_orm::{EntityTrait, Set, ActiveModelTrait, QueryOrder, DatabaseConnection, QueryFilter, Condition, ColumnTrait, JoinType, PaginatorTrait};
 use crate::entity::error_log::{self, ActiveModel as ErrorLogActiveModel, Entity as ErrorEntity};
 use crate::entity::issue::{ActiveModel as IssueActiveModel, Entity as IssueEntity};
@@ -14,8 +13,9 @@ use sha2::{Sha256, Digest};
 use crate::util::slack::send_slack_alert;
 use crate::entity::{issue, project};
 use crate::model::global_error::{AppError, ErrorCode};
+use std::sync::LazyLock;
 
-static SLACK_WEBHOOK_URL: Lazy<String> = Lazy::new(|| {
+static SLACK_WEBHOOK_URL: LazyLock<String> = LazyLock::new(|| {
     env::var("SLACK_WEBHOOK_URL").expect("SLACK_WEBHOOK_URL 환경 변수가 설정되어야 합니다.")
 });
 const ERROR_THRESHOLD: usize = 1;
