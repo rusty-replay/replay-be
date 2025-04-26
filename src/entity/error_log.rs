@@ -1,5 +1,6 @@
 use chrono::Utc;
 use sea_orm::entity::prelude::*;
+use serde_json::Value;
 use sea_orm::Set;
 use serde::{Deserialize, Serialize};
 use crate::model::error::ErrorReportRequest;
@@ -12,9 +13,9 @@ pub struct Model {
     pub message: String,
     pub stacktrace: String,
     pub app_version: String,
-    pub timestamp: String,
+    pub timestamp: DateTimeWithTimeZone,
     pub group_hash: String,
-    pub replay: Json,
+    pub replay: Option<Value>,
     pub environment: String,  // "development", "staging", "production"
     pub browser: Option<String>,
     pub os: Option<String>,
@@ -23,6 +24,7 @@ pub struct Model {
     pub project_id: i32,
     pub issue_id: Option<i32>,  // 이슈와 연결
     pub reported_by: Option<i32>,
+    pub additional_info: Option<Value>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }
@@ -95,6 +97,7 @@ impl ActiveModel {
             project_id: Set(project_id),
             issue_id: Set(Some(issue_id)),
             reported_by: Set(event.user_id),
+            additional_info: Set(event.additional_info.clone()),
             created_at: Set(now.into()),
             updated_at: Set(now.into()),
             ..Default::default()
