@@ -79,6 +79,7 @@ async fn main() -> anyhow::Result<()> {
                     .service(api::get_me)
 
                     .service(api::create_project)
+                    .service(api::update_project)
                     .service(api::list_user_projects)
                     .service(api::get_project)
 

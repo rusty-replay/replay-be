@@ -1,6 +1,6 @@
 use sea_orm::prelude::DateTimeWithTimeZone;
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use crate::entity::project::Model as ProjectModel;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProjectCreateRequest {
@@ -29,6 +29,20 @@ pub struct ProjectResponse {
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }
+
+impl From<ProjectModel> for ProjectResponse {
+    fn from(model: ProjectModel) -> Self {
+        Self {
+            id: model.id,
+            name: model.name,
+            description: model.description,
+            api_key: model.api_key,
+            created_at: model.created_at,
+            updated_at: model.updated_at,
+        }
+    }
+}
+
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProjectMemberResponse {

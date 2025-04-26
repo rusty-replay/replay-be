@@ -1,5 +1,5 @@
 use actix_web::{delete, get, post, put, web, HttpResponse, Responder};
-use sea_orm::{Set, ActiveModelTrait, EntityTrait, QueryFilter, ColumnTrait};
+use sea_orm::{Set, ActiveModelTrait, EntityTrait, QueryFilter, ColumnTrait, DatabaseConnection};
 use sea_query::Condition;
 use crate::entity::project_member::{Entity as ProjectMemberEntity, ActiveModel as ProjectMemberActiveModel};
 use crate::entity::project::{Entity as ProjectEntity, ActiveModel as ProjectActiveModel};
@@ -7,10 +7,62 @@ use crate::entity::{project_member, user};
 use crate::model::global_error::{AppError, ErrorCode};
 use crate::model::project::{ProjectCreateRequest, ProjectDetailResponse, ProjectMemberResponse, ProjectResponse, ProjectUpdateRequest};
 
+#[put("/projects/{id}")]
+pub async fn update_project(
+    path: web::Path<i32>,
+    body: web::Json<ProjectUpdateRequest>,
+    db: web::Data<DatabaseConnection>,
+    auth_user: web::ReqData<i32>
+) -> Result<HttpResponse, AppError> {
+    let project_id = path.into_inner();
+    let user_id = auth_user.into_inner();
+
+    let is_member = ProjectMemberEntity::find()
+        .filter(
+            Condition::all()
+                .add(project_member::Column::ProjectId.eq(project_id))
+                .add(project_member::Column::UserId.eq(user_id))
+        )
+        .one(db.get_ref())
+        .await
+        .map_err(|err| {
+            log::error!("프로젝트 멤버십 확인 중 오류 발생: {}", err);
+            AppError::new(ErrorCode::DatabaseError)
+        })?;
+
+    if is_member.is_none() {
+        return Err(AppError::new(ErrorCode::NotEnoughPermission));
+    }
+
+    let project = ProjectEntity::find_by_id(project_id)
+        .one(db.get_ref())
+        .await
+        .map_err(|err| {
+            log::error!("프로젝트 조회 중 오류 발생: {}", err);
+            AppError::new(ErrorCode::DatabaseError)
+        })?
+        .ok_or_else(|| AppError::new(ErrorCode::ProjectNotFound))?;
+
+    let mut project_model: ProjectActiveModel = project.into();
+
+    if let Some(name) = &body.name {
+        project_model.name = Set(name.clone());
+    }
+    if let Some(description) = &body.description {
+        project_model.description = Set(Some(description.clone()));
+    }
+    project_model.updated_at = Set(chrono::Utc::now().into());
+
+    let updated_project = project_model.update(db.get_ref()).await.map_err(|_| AppError::new(ErrorCode::DatabaseError))?;
+
+    Ok(HttpResponse::Ok().json(ProjectResponse::from(updated_project)))
+}
+
+
 #[post("/projects")]
 pub async fn create_project(
     body: web::Json<ProjectCreateRequest>,
-    db: web::Data<sea_orm::DatabaseConnection>,
+    db: web::Data<DatabaseConnection>,
     auth_user: web::ReqData<i32>,
 ) -> impl Responder {
     let api_key = format!("proj_{}", uuid::Uuid::new_v4().to_string().replace("-", ""));
