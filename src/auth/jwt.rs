@@ -2,9 +2,16 @@ use crate::model::auth::Claims;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation, errors::Error as JwtError};
 use std::env;
-use crate::model::global_error::AppError;
+use actix_web::cookie::{Cookie, SameSite};
+use jsonwebtoken::errors::ErrorKind;
 
 pub struct JwtUtils;
+
+pub enum TokenVerifyResult {
+    Valid(Claims),
+    Expired,
+    Invalid,
+}
 
 impl JwtUtils {
     fn get_secret() -> String {
@@ -51,14 +58,37 @@ impl JwtUtils {
         )
     }
 
-    pub fn verify_token(token: &str) -> Result<Claims, AppError> {
-        let token_data = decode::<Claims>(
+    pub fn verify_token(token: &str) -> TokenVerifyResult {
+        match decode::<Claims>(
             token,
             &DecodingKey::from_secret(Self::get_secret().as_bytes()),
             &Validation::default(),
-        )?;
-
-        Ok(token_data.claims)
+        ) {
+            Ok(data) => TokenVerifyResult::Valid(data.claims),
+            Err(err) => match *err.kind() {
+                ErrorKind::ExpiredSignature => TokenVerifyResult::Expired,
+                _ => TokenVerifyResult::Invalid,
+            },
+        }
     }
+}
 
+pub fn build_access_token_cookie(token: &str) -> Cookie<'_> {
+    Cookie::build("accessToken", token.to_string())
+        .path("/")
+        .http_only(true)
+        .secure(true)
+        .same_site(SameSite::Lax)
+        .max_age(time::Duration::seconds(3))
+        .finish()
+}
+
+pub fn build_refresh_token_cookie(token: &str) -> Cookie<'_> {
+    Cookie::build("refreshToken", token.to_string())
+        .path("/")
+        .http_only(true)
+        .secure(true)
+        .same_site(SameSite::Lax)
+        .max_age(time::Duration::seconds(60))
+        .finish()
 }

@@ -30,6 +30,7 @@ pub enum ErrorCode {
     TokenGenerationFailed,
     JwtInvalidToken,
     JwtExpiredToken,
+    ExpiredRefreshToken
 
 }
 
@@ -56,6 +57,7 @@ impl ErrorCode {
             ErrorCode::TokenGenerationFailed => "토큰 생성에 실패했습니다",
             ErrorCode::JwtInvalidToken => "JWT 토큰이 유효하지 않습니다",
             ErrorCode::JwtExpiredToken => "JWT 토큰이 만료되었습니다",
+            ErrorCode::ExpiredRefreshToken => "refreshToken이 만료되었습니다",
         }
     }
 }
@@ -116,10 +118,12 @@ pub struct ValidationFieldError {
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 #[serde(untagged)]
 enum ErrorResponse {
     General {
-        code: String,
+        #[serde(rename = "errorCode")]
+        error_code: String,
         message: String,
     },
     Validation {
@@ -183,7 +187,7 @@ impl ResponseError for AppError {
                     _ => unreachable!(),
                 };
                 HttpResponse::build(self.status_code()).json(ErrorResponse::General {
-                    code: format!("{:?}", code),
+                    error_code: format!("{:?}", code),
                     message: code.message().to_string(),
                 })
             }

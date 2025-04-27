@@ -7,7 +7,7 @@ mod migration;
 mod util;
 
 use actix_cors::Cors;
-use actix_web::{App, HttpServer};
+use actix_web::{web, App, HttpServer};
 use actix_web::http::header;
 use actix_web::middleware::from_fn;
 use actix_web::web::{scope, Data, JsonConfig};
@@ -19,7 +19,7 @@ use tracing_log::log::info;
 use tracing_subscriber::EnvFilter;
 use entity::{error_log, user};
 use rusty_replay::telemetry::{get_subscriber, init_subscriber};
-use crate::auth::{AuthMiddleware, auth_middleware};
+use crate::auth::{auth_middleware};
 use crate::migration::{Migrator, MigratorTrait};
 
 #[actix_web::main]
@@ -48,7 +48,6 @@ async fn main() -> anyhow::Result<()> {
         let cors = Cors::default()
             .allowed_origin("http://localhost:3000")
             .allowed_origin("http://localhost:3001")
-            .allow_any_origin()
             .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
             .allowed_headers(vec![
                 header::CONTENT_TYPE,
@@ -74,7 +73,6 @@ async fn main() -> anyhow::Result<()> {
             .service(api::report_error)
             .service(
                 scope("/api")
-                    // .wrap(AuthMiddleware)
                     .wrap(from_fn(auth_middleware))
                     .service(api::get_me)
 

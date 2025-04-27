@@ -5,8 +5,8 @@ use sea_orm::{DatabaseConnection, EntityTrait, Set, ActiveModelTrait, QueryFilte
 use sea_query::Condition;
 use crate::model::global_error::{AppError, ErrorCode, ValidationFieldError};
 use crate::entity::user::{self, Entity as UserEntity};
-use crate::model::auth::{RegisterRequest, LoginRequest, AuthResponse, RefreshTokenRequest, UserResponse};
-use crate::auth::jwt::JwtUtils;
+use crate::model::auth::{RegisterRequest, LoginRequest, UserResponse};
+use crate::auth::jwt::{build_access_token_cookie, build_refresh_token_cookie, JwtUtils, TokenVerifyResult};
 
 #[post("/auth/register")]
 pub async fn register(
@@ -46,22 +46,16 @@ pub async fn register(
 
     let user = new_user.insert(&txn).await?;
 
-    let token = JwtUtils::generate_token(user.id, &user.role)
-        .map_err(|_| AppError::internal_error(ErrorCode::TokenGenerationFailed))?;
-
-    let r_token = JwtUtils::generate_refresh_token(user.id)
-        .map_err(|_| AppError::internal_error(ErrorCode::TokenGenerationFailed))?;
+    let access_token = JwtUtils::generate_token(user.id, &user.role)?;
+    let refresh_token_str = JwtUtils::generate_refresh_token(user.id)?;
 
     txn.commit().await?;
 
-    Ok(HttpResponse::Created().json(AuthResponse {
-        token,
-        refresh_token: r_token,
-        user_id: user.id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-    }))
+    Ok(HttpResponse::Created()
+        .cookie(build_access_token_cookie(&access_token))
+        .cookie(build_refresh_token_cookie(&refresh_token_str))
+        .finish()
+    )
 }
 
 #[post("/auth/login")]
@@ -86,50 +80,50 @@ pub async fn login(
         return Err(AppError::bad_request(ErrorCode::InvalidEmailPwd));
     }
 
-    let token = JwtUtils::generate_token(user.id, &user.role)
-        .map_err(|_| AppError::internal_error(ErrorCode::TokenGenerationFailed))?;
-
-    let r_token = JwtUtils::generate_refresh_token(user.id)
-        .map_err(|_| AppError::internal_error(ErrorCode::TokenGenerationFailed))?;
+    let access_token = JwtUtils::generate_token(user.id, &user.role)?;
+    let refresh_token_str = JwtUtils::generate_refresh_token(user.id)?;
 
     txn.commit().await?;
 
-    Ok(HttpResponse::Ok().json(AuthResponse {
-        token,
-        refresh_token: r_token,
-        user_id: user.id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-    }))
+    Ok(HttpResponse::Ok()
+        .cookie(build_access_token_cookie(&access_token))
+        .cookie(build_refresh_token_cookie(&refresh_token_str))
+        .finish()
+    )
 }
 
 #[post("/auth/refresh")]
 pub async fn refresh_token(
-    body: web::Json<RefreshTokenRequest>,
+    req: actix_web::HttpRequest,
     db: web::Data<DatabaseConnection>,
 ) -> Result<HttpResponse, AppError> {
-    let claims = JwtUtils::verify_token(&body.refresh_token)
-        .map_err(|_| AppError::unauthorized(ErrorCode::InvalidRefreshToken))?;
+    let refresh_token_cookie = req.cookie("refreshToken")
+        .ok_or_else(|| AppError::unauthorized(ErrorCode::InvalidAuthToken))?;
 
-    if claims.role != "refresh" {
-        return Err(AppError::unauthorized(ErrorCode::NotRefreshToken));
+    match JwtUtils::verify_token(refresh_token_cookie.value()) {
+        TokenVerifyResult::Valid(claims) => {
+            if claims.role != "refresh" {
+                return Err(AppError::unauthorized(ErrorCode::NotRefreshToken));
+            }
+
+            let user_id = claims.sub.parse::<i32>()
+                .map_err(|_| AppError::internal_error(ErrorCode::InternalError))?;
+
+            let user = UserEntity::find_by_id(user_id)
+                .one(db.get_ref())
+                .await?
+                .ok_or_else(|| AppError::not_found(ErrorCode::MemberNotFound))?;
+
+            let new_access_token = JwtUtils::generate_token(user.id, &user.role)?;
+
+            Ok(HttpResponse::Ok()
+                .cookie(build_access_token_cookie(&new_access_token))
+                .finish())
+        }
+        TokenVerifyResult::Expired | TokenVerifyResult::Invalid => {
+            Err(AppError::unauthorized(ErrorCode::InvalidRefreshToken))
+        }
     }
-
-    let user_id = claims.sub.parse::<i32>()
-        .map_err(|_| AppError::internal_error(ErrorCode::InternalError))?;
-
-    let user = UserEntity::find_by_id(user_id)
-        .one(db.get_ref())
-        .await?
-        .ok_or_else(|| AppError::not_found(ErrorCode::MemberNotFound))?;
-
-    let new_token = JwtUtils::generate_token(user.id, &user.role)
-        .map_err(|_| AppError::internal_error(ErrorCode::TokenGenerationFailed))?;
-
-    Ok(HttpResponse::Ok().json(serde_json::json!({
-        "token": new_token
-    })))
 }
 
 #[get("/auth/me")]
@@ -215,3 +209,4 @@ fn validate_register_request(username: &str, email: &str, password: &str) -> Res
         Err(AppError::ValidationError(errors))
     }
 }
+

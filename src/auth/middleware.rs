@@ -1,115 +1,74 @@
 use actix_web::{
-    dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
-    error::ErrorUnauthorized,
     Error, HttpMessage,
+    dev::{ServiceRequest, ServiceResponse},
+    middleware::Next,
+    body::MessageBody,
+    http::Method,
+    HttpResponse,
 };
-use std::future::{Future, Ready, ready};
-use std::pin::Pin;
-use actix_web::body::MessageBody;
-use actix_web::middleware::Next;
+use actix_web::body::BoxBody;
+use actix_web::ResponseError;
 use crate::model::global_error::{AppError, ErrorCode};
-use super::jwt::JwtUtils;
-
-pub struct AuthMiddleware;
-
-impl<S, B> Transform<S, ServiceRequest> for AuthMiddleware
-where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
-    S::Future: 'static,
-    B: 'static,
-{
-    type Response = ServiceResponse<B>;
-    type Error = Error;
-    type Transform = AuthMiddlewareService<S>;
-    type InitError = ();
-    type Future = Ready<Result<Self::Transform, Self::InitError>>;
-
-    fn new_transform(&self, service: S) -> Self::Future {
-        ready(Ok(AuthMiddlewareService { service }))
-    }
-}
-
-pub struct AuthMiddlewareService<S> {
-    service: S,
-}
-
-impl<S, B> Service<ServiceRequest> for AuthMiddlewareService<S>
-where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
-    S::Future: 'static,
-    B: 'static,
-{
-    type Response = ServiceResponse<B>;
-    type Error = Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
-
-    forward_ready!(service);
-
-    fn call(&self, req: ServiceRequest) -> Self::Future {
-        let auth_header = req.headers().get("Authorization");
-
-        let auth_result = match auth_header {
-            Some(header_value) => {
-                let auth_str = header_value.to_str().unwrap_or("");
-                if auth_str.starts_with("Bearer ") {
-                    let token = &auth_str[7..];
-                    match JwtUtils::verify_token(token) {
-                        Ok(claims) => {
-                            req.extensions_mut().insert(claims);
-                            Ok(())
-                        }
-                        Err(_) => Err(ErrorUnauthorized("Invalid token")),
-                    }
-                } else {
-                    Err(ErrorUnauthorized("Invalid Authorization header format"))
-                }
-            }
-            None => Err(ErrorUnauthorized("Authorization header missing")),
-        };
-
-        let fut = self.service.call(req);
-        Box::pin(async move {
-            match auth_result {
-                Ok(_) => fut.await,
-                Err(e) => Err(e),
-            }
-        })
-    }
-}
+use super::jwt::{build_access_token_cookie, JwtUtils, TokenVerifyResult};
 
 pub async fn auth_middleware(
-    req: ServiceRequest,
-    next: Next<impl MessageBody>,
-) -> Result<ServiceResponse<impl MessageBody>, Error> {
-    let auth_header = req.headers().get("Authorization");
+    mut req: ServiceRequest,
+    next: Next<BoxBody>,
+) -> Result<ServiceResponse<BoxBody>, Error> {
+    if req.method() == Method::OPTIONS {
+        return Ok(req.into_response(HttpResponse::Ok().finish().map_into_boxed_body()));
+    }
 
-    match auth_header {
-        Some(header_value) => {
-            let auth_str = header_value.to_str().unwrap_or("");
-            if auth_str.starts_with("Bearer ") {
-                let token = &auth_str[7..];
-                match JwtUtils::verify_token(token) {
-                    Ok(claims) => {
-                        req.extensions_mut().insert(claims.clone());
+    if let Some(access_cookie) = req.cookie("accessToken") {
+        let token = access_cookie.value();
 
-                        if let Ok(user_id) = claims.sub.parse::<i32>() {
-                            req.extensions_mut().insert(user_id);
+        match JwtUtils::verify_token(token) {
+            TokenVerifyResult::Valid(claims) => {
+                req.extensions_mut().insert(claims.clone());
+                if let Ok(user_id) = claims.sub.parse::<i32>() {
+                    req.extensions_mut().insert(user_id);
+                }
+                return next.call(req).await;
+            }
+            TokenVerifyResult::Expired => {
+                if let Some(refresh_cookie) = req.cookie("refreshToken") {
+                    let refresh_token = refresh_cookie.value();
+                    return match JwtUtils::verify_token(refresh_token) {
+                        TokenVerifyResult::Valid(refresh_claims) if refresh_claims.role == "refresh" => {
+                            let user_id = refresh_claims.sub.parse::<i32>()
+                                .map_err(|_| AppError::internal_error(ErrorCode::InternalError))?;
+
+                            let new_access_token = JwtUtils::generate_token(user_id, "user")
+                                .map_err(|_| AppError::internal_error(ErrorCode::InternalError))?;
+
+                            let mut res = next.call(req).await?;
+                            res.response_mut()
+                                .add_cookie(&build_access_token_cookie(&new_access_token))
+                                .ok();
+                            Ok(res)
                         }
-
-                        println!("User ID: {:?}", claims.sub);
-
-                        next.call(req).await
-                    }
-                    Err(_) => {
-                        Err(AppError::bad_request(ErrorCode::InvalidAuthToken).into())
+                        TokenVerifyResult::Expired => {
+                            // Response를 직접 만들어서 반환
+                            // 안 그러면 custom error(AppError)로 처리 안 됨
+                            let resp = AppError::unauthorized(ErrorCode::ExpiredRefreshToken).error_response();
+                            return Ok(req.into_response(resp.map_into_boxed_body()));
+                        }
+                        _ => {
+                            let resp = AppError::unauthorized(ErrorCode::InvalidRefreshToken).error_response();
+                            return Ok(req.into_response(resp.map_into_boxed_body()));
+                        }
                     }
                 }
-            } else {
-                Err(AppError::bad_request(ErrorCode::InvalidAuthToken).into())
+                let resp = AppError::unauthorized(ErrorCode::ExpiredAuthToken).error_response();
+                return Ok(req.into_response(resp.map_into_boxed_body()));
+            }
+            TokenVerifyResult::Invalid => {
+                let resp = AppError::unauthorized(ErrorCode::InvalidAuthToken).error_response();
+                return Ok(req.into_response(resp.map_into_boxed_body()));
             }
         }
-        None => {
-            Err(AppError::bad_request(ErrorCode::InvalidAuthToken).into())
-        }
+    } else {
+        let resp = AppError::unauthorized(ErrorCode::InvalidAuthToken).error_response();
+        return Ok(req.into_response(resp.map_into_boxed_body()));
     }
 }
