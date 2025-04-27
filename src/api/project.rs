@@ -1,4 +1,4 @@
-use actix_web::{delete, get, post, put, web, HttpResponse, Responder};
+use actix_web::{delete, get, post, put, web, HttpResponse};
 use sea_orm::{Set, ActiveModelTrait, EntityTrait, QueryFilter, ColumnTrait, DatabaseConnection};
 use sea_query::Condition;
 use crate::entity::project_member::{Entity as ProjectMemberEntity, ActiveModel as ProjectMemberActiveModel};
@@ -7,15 +7,72 @@ use crate::entity::{project_member, user};
 use crate::model::global_error::{AppError, ErrorCode};
 use crate::model::project::{ProjectCreateRequest, ProjectDetailResponse, ProjectMemberResponse, ProjectResponse, ProjectUpdateRequest};
 
-#[put("/projects/{id}")]
-pub async fn update_project(
-    path: web::Path<i32>,
-    body: web::Json<ProjectUpdateRequest>,
+#[post("/projects")]
+pub async fn create_project(
+    body: web::Json<ProjectCreateRequest>,
     db: web::Data<DatabaseConnection>,
-    auth_user: web::ReqData<i32>
+    auth_user: web::ReqData<i32>,
+) -> Result<HttpResponse, AppError> {
+    let api_key = format!("proj_{}", uuid::Uuid::new_v4().to_string().replace("-", ""));
+    let now = chrono::Utc::now();
+
+    let new_project = ProjectActiveModel {
+        name: Set(body.name.clone()),
+        api_key: Set(api_key),
+        description: Set(body.description.clone()),
+        created_at: Set(now.into()),
+        updated_at: Set(now.into()),
+        ..Default::default()
+    };
+
+    let inserted_project = new_project.insert(db.get_ref()).await?;
+
+    let member = ProjectMemberActiveModel {
+        user_id: Set(*auth_user),
+        project_id: Set(inserted_project.id),
+        role: Set("owner".to_string()),
+        joined_at: Set(now.into()),
+    };
+
+    member.insert(db.get_ref()).await?;
+
+    Ok(HttpResponse::Created().json(ProjectResponse::from(inserted_project)))
+}
+
+#[get("/projects")]
+pub async fn list_user_projects(
+    db: web::Data<DatabaseConnection>,
+    auth_user: web::ReqData<i32>,
+) -> Result<HttpResponse, AppError> {
+    let user_id = *auth_user;
+
+    let projects = ProjectMemberEntity::find()
+        .filter(project_member::Column::UserId.eq(user_id))
+        .find_with_related(ProjectEntity)
+        .all(db.get_ref())
+        .await?;
+
+    let response: Vec<ProjectResponse> = projects
+        .into_iter()
+        .filter_map(|(_, projects)| projects.first().cloned().map(ProjectResponse::from))
+        .collect();
+
+    Ok(HttpResponse::Ok().json(response))
+}
+
+#[get("/projects/{id}")]
+pub async fn get_project(
+    db: web::Data<DatabaseConnection>,
+    path: web::Path<i32>,
+    auth_user: web::ReqData<i32>,
 ) -> Result<HttpResponse, AppError> {
     let project_id = path.into_inner();
-    let user_id = auth_user.into_inner();
+    let user_id = *auth_user;
+
+    ProjectEntity::find_by_id(project_id)
+        .one(db.get_ref())
+        .await?
+        .ok_or_else(|| AppError::not_found(ErrorCode::ProjectNotFound))?;
 
     let is_member = ProjectMemberEntity::find()
         .filter(
@@ -24,24 +81,67 @@ pub async fn update_project(
                 .add(project_member::Column::UserId.eq(user_id))
         )
         .one(db.get_ref())
-        .await
-        .map_err(|err| {
-            log::error!("프로젝트 멤버십 확인 중 오류 발생: {}", err);
-            AppError::new(ErrorCode::DatabaseError)
-        })?;
+        .await?;
 
     if is_member.is_none() {
-        return Err(AppError::new(ErrorCode::NotEnoughPermission));
+        return Err(AppError::forbidden(ErrorCode::NotEnoughPermission));
     }
 
     let project = ProjectEntity::find_by_id(project_id)
         .one(db.get_ref())
-        .await
-        .map_err(|err| {
-            log::error!("프로젝트 조회 중 오류 발생: {}", err);
-            AppError::new(ErrorCode::DatabaseError)
-        })?
-        .ok_or_else(|| AppError::new(ErrorCode::ProjectNotFound))?;
+        .await?
+        .ok_or_else(|| AppError::not_found(ErrorCode::ProjectNotFound))?;
+
+    let members = ProjectMemberEntity::find()
+        .filter(project_member::Column::ProjectId.eq(project_id))
+        .find_with_related(user::Entity)
+        .all(db.get_ref())
+        .await?;
+
+    let member_responses: Vec<ProjectMemberResponse> = members
+        .into_iter()
+        .filter_map(|(member, users)| users.first().map(|u| ProjectMemberResponse {
+            user_id: u.id,
+            username: u.username.clone(),
+            email: u.email.clone(),
+            role: member.role.clone(),
+            joined_at: member.joined_at,
+        }))
+        .collect();
+
+    Ok(HttpResponse::Ok().json(ProjectDetailResponse {
+        project: ProjectResponse::from(project),
+        members: member_responses,
+    }))
+}
+
+#[put("/projects/{id}")]
+pub async fn update_project(
+    path: web::Path<i32>,
+    body: web::Json<ProjectUpdateRequest>,
+    db: web::Data<DatabaseConnection>,
+    auth_user: web::ReqData<i32>,
+) -> Result<HttpResponse, AppError> {
+    let project_id = path.into_inner();
+    let user_id = *auth_user;
+
+    let is_member = ProjectMemberEntity::find()
+        .filter(
+            Condition::all()
+                .add(project_member::Column::ProjectId.eq(project_id))
+                .add(project_member::Column::UserId.eq(user_id))
+        )
+        .one(db.get_ref())
+        .await?;
+
+    if is_member.is_none() {
+        return Err(AppError::forbidden(ErrorCode::NotEnoughPermission));
+    }
+
+    let project = ProjectEntity::find_by_id(project_id)
+        .one(db.get_ref())
+        .await?
+        .ok_or_else(|| AppError::not_found(ErrorCode::ProjectNotFound))?;
 
     let mut project_model: ProjectActiveModel = project.into();
 
@@ -53,169 +153,39 @@ pub async fn update_project(
     }
     project_model.updated_at = Set(chrono::Utc::now().into());
 
-    let updated_project = project_model.update(db.get_ref()).await.map_err(|_| AppError::new(ErrorCode::DatabaseError))?;
+    let updated_project = project_model.update(db.get_ref()).await?;
 
     Ok(HttpResponse::Ok().json(ProjectResponse::from(updated_project)))
 }
 
-
-#[post("/projects")]
-pub async fn create_project(
-    body: web::Json<ProjectCreateRequest>,
+#[delete("/projects/{id}")]
+pub async fn delete_project(
     db: web::Data<DatabaseConnection>,
-    auth_user: web::ReqData<i32>,
-) -> impl Responder {
-    let api_key = format!("proj_{}", uuid::Uuid::new_v4().to_string().replace("-", ""));
-
-    let now = chrono::Utc::now();
-
-    let new_project = ProjectActiveModel {
-        name: Set(body.name.clone()),
-        api_key: Set(api_key.clone()),
-        description: Set(body.description.clone()),
-        created_at: Set(now.into()),
-        updated_at: Set(now.into()),
-        ..Default::default()
-    };
-
-    let inserted_project = new_project.insert(db.get_ref()).await.unwrap();
-
-    let member = ProjectMemberActiveModel {
-        user_id: Set(auth_user.into_inner()),
-        project_id: Set(inserted_project.id),
-        role: Set("owner".to_string()),
-        joined_at: Set(now.into()),
-    };
-
-    let _ = member.insert(db.get_ref()).await.unwrap();
-
-    HttpResponse::Created().json(ProjectResponse {
-        id: inserted_project.id,
-        name: inserted_project.name,
-        api_key: inserted_project.api_key,
-        description: inserted_project.description,
-        created_at: inserted_project.created_at,
-        updated_at: inserted_project.updated_at,
-    })
-}
-
-#[get("/projects")]
-pub async fn list_user_projects(
-    db: web::Data<sea_orm::DatabaseConnection>,
-    auth_user: web::ReqData<i32>,
-) -> impl Responder {
-    let user_id = auth_user.into_inner();
-
-    let projects = ProjectMemberEntity::find()
-        .filter(project_member::Column::UserId.eq(user_id))
-        .find_with_related(ProjectEntity)
-        .all(db.get_ref())
-        .await
-        .unwrap();
-
-    let response: Vec<ProjectResponse> = projects
-        .into_iter()
-        .map(|(_, projects)| {
-            let project = projects.first().unwrap();
-            ProjectResponse {
-                id: project.id,
-                name: project.name.clone(),
-                api_key: project.api_key.clone(),
-                description: project.description.clone(),
-                created_at: project.created_at,
-                updated_at: project.updated_at,
-            }
-        })
-        .collect();
-
-    HttpResponse::Ok().json(response)
-}
-
-#[get("/projects/{id}")]
-pub async fn get_project(
-    db: web::Data<sea_orm::DatabaseConnection>,
     path: web::Path<i32>,
     auth_user: web::ReqData<i32>,
 ) -> Result<HttpResponse, AppError> {
     let project_id = path.into_inner();
-    let user_id = auth_user.into_inner();
+    let user_id = *auth_user;
 
-    let project_exists = ProjectEntity::find_by_id(project_id)
-        .one(db.get_ref())
-        .await
-        .map_err(|err| {
-            log::error!("프로젝트 존재 확인 중 오류 발생: {}", err);
-            AppError::new(ErrorCode::DatabaseError)
-        })?
-        .is_some();
-
-    if !project_exists {
-        return Err(AppError::new(ErrorCode::ProjectNotFound));
-    }
-
-    let is_member = ProjectMemberEntity::find()
+    let is_owner = ProjectMemberEntity::find()
         .filter(
             Condition::all()
                 .add(project_member::Column::ProjectId.eq(project_id))
                 .add(project_member::Column::UserId.eq(user_id))
+                .add(project_member::Column::Role.eq("owner"))
         )
         .one(db.get_ref())
-        .await
-        .map_err(|err| {
-            log::error!("프로젝트 멤버십 확인 중 오류 발생: {}", err);
-            AppError::new(ErrorCode::DatabaseError)
-        })?;
+        .await?;
 
-    if is_member.is_none() {
-        return Err(AppError::new(ErrorCode::NotEnoughPermission));
+    if is_owner.is_none() {
+        return Err(AppError::forbidden(ErrorCode::NotEnoughPermission));
     }
 
-    let project = ProjectEntity::find_by_id(project_id)
-        .one(db.get_ref())
-        .await
-        .map_err(|err| {
-            log::error!("프로젝트 조회 중 오류 발생: {}", err);
-            AppError::new(ErrorCode::DatabaseError)
-        })?
-        .ok_or_else(|| AppError::new(ErrorCode::ProjectNotFound))?;
+    ProjectEntity::delete_by_id(project_id)
+        .exec(db.get_ref())
+        .await?;
 
-    let members = ProjectMemberEntity::find()
-        .filter(project_member::Column::ProjectId.eq(project_id))
-        .find_with_related(user::Entity)
-        .all(db.get_ref())
-        .await
-        .map_err(|err| {
-            log::error!("프로젝트 멤버 목록 조회 중 오류 발생: {}", err);
-            AppError::new(ErrorCode::DatabaseError)
-        })?;
-
-    let member_responses: Vec<ProjectMemberResponse> = members
-        .into_iter()
-        .filter_map(|(member, users)| {
-            // 사용자 정보가 있는 경우에만 처리
-            users.first().map(|user| {
-                ProjectMemberResponse {
-                    user_id: user.id,
-                    username: user.username.clone(),
-                    email: user.email.clone(),
-                    role: member.role.clone(),
-                    joined_at: member.joined_at,
-                }
-            })
-        })
-        .collect();
-
-    Ok(HttpResponse::Ok().json(ProjectDetailResponse {
-        project: ProjectResponse {
-            id: project.id,
-            name: project.name,
-            api_key: project.api_key,
-            description: project.description,
-            created_at: project.created_at,
-            updated_at: project.updated_at,
-        },
-        members: member_responses,
-    }))
+    Ok(HttpResponse::NoContent().finish())
 }
 
 // #[put("/projects/{id}")]

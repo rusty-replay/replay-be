@@ -101,15 +101,15 @@ pub async fn auth_middleware(
                         next.call(req).await
                     }
                     Err(_) => {
-                        Err(AppError::new(ErrorCode::InvalidAuthToken).into())
+                        Err(AppError::bad_request(ErrorCode::InvalidAuthToken).into())
                     }
                 }
             } else {
-                Err(AppError::new(ErrorCode::InvalidAuthToken).into())
+                Err(AppError::bad_request(ErrorCode::InvalidAuthToken).into())
             }
         }
         None => {
-            Err(AppError::new(ErrorCode::InvalidAuthToken).into())
+            Err(AppError::bad_request(ErrorCode::InvalidAuthToken).into())
         }
     }
 }

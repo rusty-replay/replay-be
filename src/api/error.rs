@@ -1,13 +1,11 @@
 use std::env;
 use actix_web::{get, post, web, HttpResponse, Responder};
 use chrono::Utc;
-use sea_orm::{EntityTrait, Set, ActiveModelTrait, QueryOrder, DatabaseConnection, QueryFilter, Condition, ColumnTrait, JoinType, PaginatorTrait};
-use crate::entity::error_log::{self, ActiveModel as ErrorLogActiveModel, Entity as ErrorEntity};
+use sea_orm::{EntityTrait, Set, ActiveModelTrait, QueryOrder, DatabaseConnection, QueryFilter, Condition, ColumnTrait, PaginatorTrait};
+use crate::entity::error_log::{self, ActiveModel as ErrorLogActiveModel, Entity as ErrorLogEntity};
 use crate::entity::issue::{ActiveModel as IssueActiveModel, Entity as IssueEntity};
 use crate::entity::project::{Entity as ProjectEntity};
 use crate::entity::project_member::{self, Entity as ProjectMemberEntity};
-use crate::entity::user::{Entity as UserEntity};
-use crate::entity::error_log::{Entity as ErrorLogEntity};
 use crate::model::error::{BatchErrorReportRequest, BatchErrorReportResponse, ErrorReportListResponse, ErrorReportRequest, ErrorReportResponse};
 use sha2::{Sha256, Digest};
 use crate::util::slack::send_slack_alert;
@@ -66,9 +64,8 @@ async fn find_project_by_api_key(db: &DatabaseConnection, api_key: &str) -> Resu
     let project = ProjectEntity::find()
         .filter(project::Column::ApiKey.eq(api_key))
         .one(db)
-        .await
-        .map_err(|_| AppError::new(ErrorCode::DatabaseError))?
-        .ok_or_else(|| AppError::new(ErrorCode::InvalidApiKey))?;
+        .await?
+        .ok_or_else(|| AppError::bad_request(ErrorCode::InvalidApiKey))?;
 
     Ok(project.id)
 }
@@ -76,29 +73,24 @@ async fn find_project_by_api_key(db: &DatabaseConnection, api_key: &str) -> Resu
 async fn create_or_update_issue(db: &DatabaseConnection, project_id: i32, group_hash: &str, message: &str) -> Result<i32, AppError> {
     let now = Utc::now();
 
-    // 기존 이슈 찾기
     let existing_issue = IssueEntity::find()
         .filter(
             issue::Column::ProjectId.eq(project_id)
                 .and(issue::Column::GroupHash.eq(group_hash))
         )
         .one(db)
-        .await
-        .map_err(|_| AppError::new(ErrorCode::DatabaseError))?;
+        .await?;
 
     if let Some(issue) = existing_issue {
-        // 기존 이슈 업데이트
         let mut issue_model: issue::ActiveModel = issue.clone().into();
         issue_model.count = Set(issue.count + 1);
         issue_model.last_seen = Set(now.into());
         issue_model.updated_at = Set(now.into());
 
-        let updated_issue = issue_model.update(db).await
-            .map_err(|_| AppError::new(ErrorCode::DatabaseError))?;
+        let updated_issue = issue_model.update(db).await?;
 
         Ok(updated_issue.id)
     } else {
-        // 새 이슈 생성
         let title = if message.len() > 100 {
             format!("{}...", &message[..97])
         } else {
@@ -119,8 +111,7 @@ async fn create_or_update_issue(db: &DatabaseConnection, project_id: i32, group_
             ..Default::default()
         };
 
-        let inserted_issue = new_issue.insert(db).await
-            .map_err(|_| AppError::new(ErrorCode::DatabaseError))?;
+        let inserted_issue = new_issue.insert(db).await?;
 
         Ok(inserted_issue.id)
     }
@@ -181,11 +172,7 @@ async fn process_event(
 
     let new_log = ErrorLogActiveModel::from_error_event(event, project_id, issue_id, group_hash);
 
-    let _ = new_log.insert(db).await
-        .map_err(|e| {
-            log::error!("에러 로그 저장 중 오류 발생: {}", e);
-            AppError::new(ErrorCode::DatabaseError)
-        })?;
+    let _ = new_log.insert(db).await?;
 
     Ok(project_id)
 }
@@ -205,11 +192,7 @@ pub async fn report_error(
         group_hash.clone(),
     );
 
-    let inserted = new_log.insert(db.get_ref()).await
-        .map_err(|e| {
-            log::error!("에러 로그 저장 중 오류 발생: {}", e);
-            AppError::new(ErrorCode::DatabaseError)
-        })?;
+    let inserted = new_log.insert(db.get_ref()).await?;
 
     Ok(HttpResponse::Created().json(ErrorReportListResponse::from(inserted)))
 }
@@ -230,14 +213,10 @@ pub async fn list_project_errors(
                 .add(project_member::Column::UserId.eq(user_id))
         )
         .one(db.get_ref())
-        .await
-        .map_err(|err| {
-            log::error!("프로젝트 멤버십 확인 중 오류 발생: {}", err);
-            AppError::new(ErrorCode::DatabaseError)
-        })?;
+        .await?;
 
     if is_member.is_none() {
-        return Err(AppError::new(ErrorCode::NotEnoughPermission));
+        return Err(AppError::forbidden(ErrorCode::NotEnoughPermission));
     }
 
     let logs = ErrorLogEntity::find()
@@ -245,8 +224,7 @@ pub async fn list_project_errors(
         .order_by_desc(error_log::Column::CreatedAt)
         // .limit(100)
         .all(db.get_ref())
-        .await
-        .map_err(|_| AppError::new(ErrorCode::DatabaseError))?;
+        .await?;
 
     let response: Vec<ErrorReportListResponse> = logs
         .into_iter()
@@ -274,14 +252,10 @@ pub async fn get_project_error(
                 .add(project_member::Column::UserId.eq(user_id))
         )
         .one(db.get_ref())
-        .await
-        .map_err(|err| {
-            log::error!("프로젝트 멤버십 확인 중 오류 발생: {}", err);
-            AppError::new(ErrorCode::DatabaseError)
-        })?;
+        .await?;
 
     if is_member.is_none() {
-        return Err(AppError::new(ErrorCode::NotEnoughPermission));
+        return Err(AppError::forbidden(ErrorCode::NotEnoughPermission));
     }
 
     let log = ErrorLogEntity::find()
@@ -291,9 +265,8 @@ pub async fn get_project_error(
                 .add(error_log::Column::ProjectId.eq(project_id))
         )
         .one(db.get_ref())
-        .await
-        .map_err(|_| AppError::new(ErrorCode::DatabaseError))?
-        .ok_or_else(|| AppError::new(ErrorCode::ErrorLogNotFound))?;
+        .await?
+        .ok_or_else(|| AppError::not_found(ErrorCode::ErrorLogNotFound))?;
 
 
     Ok(HttpResponse::Ok().json(ErrorReportResponse::from(log)))

@@ -5,7 +5,7 @@ use sea_orm::{DatabaseConnection, EntityTrait, Set, ActiveModelTrait, QueryFilte
 use sea_query::Condition;
 use crate::model::global_error::{AppError, ErrorCode};
 use crate::entity::user::{self, Entity as UserEntity};
-use crate::model::auth::{RegisterRequest, LoginRequest, AuthResponse, RefreshTokenRequest, UserResponse, Claims};
+use crate::model::auth::{RegisterRequest, LoginRequest, AuthResponse, RefreshTokenRequest, UserResponse};
 use crate::auth::jwt::JwtUtils;
 
 #[post("/auth/register")]
@@ -13,8 +13,7 @@ pub async fn register(
     body: web::Json<RegisterRequest>,
     db: web::Data<DatabaseConnection>,
 ) -> Result<HttpResponse, AppError> {
-    let txn = db.begin().await
-        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("트랜잭션 시작 실패: {}", e)))?;
+    let txn = db.begin().await?;
 
     let existing_user = UserEntity::find()
         .filter(
@@ -23,16 +22,15 @@ pub async fn register(
                 .add(user::Column::Email.eq(&body.email))
         )
         .one(&txn)
-        .await
-        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("사용자 조회 실패: {}", e)))?;
+        .await?;
 
     if existing_user.is_some() {
-        let _ = txn.rollback().await;
-        return Err(AppError::new(ErrorCode::DuplicateAccountEmail));
+        txn.rollback().await.ok();
+        return Err(AppError::bad_request(ErrorCode::DuplicateAccountEmail));
     }
 
     let hashed_password = hash(&body.password, DEFAULT_COST)
-        .map_err(|_| AppError::new(ErrorCode::InternalError))?;
+        .map_err(|_| AppError::internal_error(ErrorCode::InternalError))?;
 
     let new_user = user::ActiveModel {
         username: Set(body.username.clone()),
@@ -44,16 +42,15 @@ pub async fn register(
         ..Default::default()
     };
 
-    let user = new_user.insert(&txn).await
-        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("사용자 생성 실패: {}", e)))?;
+    let user = new_user.insert(&txn).await?;
 
     let token = JwtUtils::generate_token(user.id, &user.role)
-        .map_err(|_| AppError::new(ErrorCode::TokenGenerationFailed))?;
-    let r_token = JwtUtils::generate_refresh_token(user.id)
-        .map_err(|_| AppError::new(ErrorCode::TokenGenerationFailed))?;
+        .map_err(|_| AppError::internal_error(ErrorCode::TokenGenerationFailed))?;
 
-    txn.commit().await
-        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("트랜잭션 커밋 실패: {}", e)))?;
+    let r_token = JwtUtils::generate_refresh_token(user.id)
+        .map_err(|_| AppError::internal_error(ErrorCode::TokenGenerationFailed))?;
+
+    txn.commit().await?;
 
     Ok(HttpResponse::Created().json(AuthResponse {
         token,
@@ -70,35 +67,28 @@ pub async fn login(
     body: web::Json<LoginRequest>,
     db: web::Data<DatabaseConnection>,
 ) -> Result<HttpResponse, AppError> {
-    let txn = db.begin().await
-        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("트랜잭션 시작 실패: {}", e)))?;
+    let txn = db.begin().await?;
 
-    let user_option = UserEntity::find()
+    let user = UserEntity::find()
         .filter(user::Column::Email.eq(&body.email))
         .one(&txn)
-        .await
-        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("사용자 조회 실패: {}", e)))?;
-
-    let user = match user_option {
-        Some(user) => user,
-        None => return Err(AppError::new(ErrorCode::InvalidEmailPwd)),
-    };
+        .await?
+        .ok_or_else(|| AppError::bad_request(ErrorCode::InvalidEmailPwd))?;
 
     let is_valid = verify(&body.password, &user.password)
-        .map_err(|_| AppError::new(ErrorCode::InternalError))?;
+        .map_err(|_| AppError::internal_error(ErrorCode::InternalError))?;
 
     if !is_valid {
-        return Err(AppError::new(ErrorCode::InvalidEmailPwd));
+        return Err(AppError::bad_request(ErrorCode::InvalidEmailPwd));
     }
 
     let token = JwtUtils::generate_token(user.id, &user.role)
-        .map_err(|_| AppError::new(ErrorCode::TokenGenerationFailed))?;
+        .map_err(|_| AppError::internal_error(ErrorCode::TokenGenerationFailed))?;
 
     let r_token = JwtUtils::generate_refresh_token(user.id)
-        .map_err(|_| AppError::new(ErrorCode::TokenGenerationFailed))?;
+        .map_err(|_| AppError::internal_error(ErrorCode::TokenGenerationFailed))?;
 
-    txn.commit().await
-        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("트랜잭션 커밋 실패: {}", e)))?;
+    txn.commit().await?;
 
     Ok(HttpResponse::Ok().json(AuthResponse {
         token,
@@ -116,27 +106,22 @@ pub async fn refresh_token(
     db: web::Data<DatabaseConnection>,
 ) -> Result<HttpResponse, AppError> {
     let claims = JwtUtils::verify_token(&body.refresh_token)
-        .map_err(|_| AppError::new(ErrorCode::InvalidRefreshToken))?;
+        .map_err(|_| AppError::unauthorized(ErrorCode::InvalidRefreshToken))?;
 
     if claims.role != "refresh" {
-        return Err(AppError::new(ErrorCode::NotRefreshToken));
+        return Err(AppError::unauthorized(ErrorCode::NotRefreshToken));
     }
 
     let user_id = claims.sub.parse::<i32>()
-        .map_err(|_| AppError::new(ErrorCode::InternalError))?;
+        .map_err(|_| AppError::internal_error(ErrorCode::InternalError))?;
 
-    let user_option = UserEntity::find_by_id(user_id)
+    let user = UserEntity::find_by_id(user_id)
         .one(db.get_ref())
-        .await
-        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("사용자 조회 실패: {}", e)))?;
-
-    let user = match user_option {
-        Some(user) => user,
-        None => return Err(AppError::new(ErrorCode::MemberNotFound)),
-    };
+        .await?
+        .ok_or_else(|| AppError::not_found(ErrorCode::MemberNotFound))?;
 
     let new_token = JwtUtils::generate_token(user.id, &user.role)
-        .map_err(|_| AppError::new(ErrorCode::TokenGenerationFailed))?;
+        .map_err(|_| AppError::internal_error(ErrorCode::TokenGenerationFailed))?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "token": new_token
@@ -148,23 +133,14 @@ pub async fn get_me(
     db: web::Data<DatabaseConnection>,
     user_id: web::ReqData<i32>,
 ) -> Result<HttpResponse, AppError> {
-    let txn = db.begin().await
-        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("트랜잭션 시작 실패: {}", e)))?;
+    let txn = db.begin().await?;
 
-    let user_id = *user_id;
-
-    let user_options = UserEntity::find_by_id(user_id)
+    let user = UserEntity::find_by_id(*user_id)
         .one(&txn)
-        .await
-        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("사용자 조회 실패: {}", e)))?;
+        .await?
+        .ok_or_else(|| AppError::not_found(ErrorCode::MemberNotFound))?;
 
-    let user = match user_options {
-        Some(user) => user,
-        None => return Err(AppError::new(ErrorCode::MemberNotFound)),
-    };
-
-    txn.commit().await
-        .map_err(|e| AppError::with_detail(ErrorCode::DatabaseError, format!("트랜잭션 커밋 실패: {}", e)))?;
+    txn.commit().await?;
 
     Ok(HttpResponse::Ok().json(UserResponse {
         id: user.id,
