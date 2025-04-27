@@ -2,6 +2,7 @@ use crate::model::auth::Claims;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation, errors::Error as JwtError};
 use std::env;
+use crate::model::global_error::AppError;
 
 pub struct JwtUtils;
 
@@ -10,7 +11,6 @@ impl JwtUtils {
         env::var("JWT_SECRET").expect("JWT_SECRET must be set")
     }
 
-    // 액세스 토큰 생성
     pub fn generate_token(user_id: i32, role: &str) -> Result<String, JwtError> {
         let expiration = Utc::now()
             .checked_add_signed(Duration::hours(1))
@@ -51,7 +51,7 @@ impl JwtUtils {
         )
     }
 
-    pub fn verify_token(token: &str) -> Result<Claims, JwtError> {
+    pub fn verify_token(token: &str) -> Result<Claims, AppError> {
         let token_data = decode::<Claims>(
             token,
             &DecodingKey::from_secret(Self::get_secret().as_bytes()),
@@ -60,4 +60,5 @@ impl JwtUtils {
 
         Ok(token_data.claims)
     }
+
 }

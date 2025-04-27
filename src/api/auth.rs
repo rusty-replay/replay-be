@@ -3,7 +3,7 @@ use bcrypt::{hash, verify, DEFAULT_COST};
 use chrono::Utc;
 use sea_orm::{DatabaseConnection, EntityTrait, Set, ActiveModelTrait, QueryFilter, ColumnTrait, TransactionTrait};
 use sea_query::Condition;
-use crate::model::global_error::{AppError, ErrorCode};
+use crate::model::global_error::{AppError, ErrorCode, ValidationFieldError};
 use crate::entity::user::{self, Entity as UserEntity};
 use crate::model::auth::{RegisterRequest, LoginRequest, AuthResponse, RefreshTokenRequest, UserResponse};
 use crate::auth::jwt::JwtUtils;
@@ -13,6 +13,8 @@ pub async fn register(
     body: web::Json<RegisterRequest>,
     db: web::Data<DatabaseConnection>,
 ) -> Result<HttpResponse, AppError> {
+    validate_register_request(&body.username, &body.email, &body.password)?;
+
     let txn = db.begin().await?;
 
     let existing_user = UserEntity::find()
@@ -67,6 +69,8 @@ pub async fn login(
     body: web::Json<LoginRequest>,
     db: web::Data<DatabaseConnection>,
 ) -> Result<HttpResponse, AppError> {
+    validate_login_request(&body.email, &body.password)?;
+
     let txn = db.begin().await?;
 
     let user = UserEntity::find()
@@ -149,4 +153,65 @@ pub async fn get_me(
         role: user.role,
         created_at: user.created_at.into(),
     }))
+}
+
+
+fn validate_login_request(email: &str, password: &str) -> Result<(), AppError> {
+    let mut errors = Vec::new();
+
+    if email.trim().is_empty() {
+        errors.push(ValidationFieldError {
+            field: "email".to_string(),
+            message: "이메일은 필수입니다.".to_string(),
+        });
+    }
+
+    if password.len() < 8 {
+        errors.push(ValidationFieldError {
+            field: "password".to_string(),
+            message: "비밀번호는 최소 8자 이상이어야 합니다.".to_string(),
+        });
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(AppError::ValidationError(errors))
+    }
+}
+
+fn validate_register_request(username: &str, email: &str, password: &str) -> Result<(), AppError> {
+    let mut errors = Vec::new();
+
+    if username.trim().is_empty() {
+        errors.push(ValidationFieldError {
+            field: "username".to_string(),
+            message: "사용자명은 필수입니다.".to_string(),
+        });
+    }
+
+    if email.trim().is_empty() {
+        errors.push(ValidationFieldError {
+            field: "email".to_string(),
+            message: "이메일은 필수입니다.".to_string(),
+        });
+    } else if !email.contains('@') {
+        errors.push(ValidationFieldError {
+            field: "email".to_string(),
+            message: "유효한 이메일 형식이 아닙니다.".to_string(),
+        });
+    }
+
+    if password.len() < 8 {
+        errors.push(ValidationFieldError {
+            field: "password".to_string(),
+            message: "비밀번호는 최소 8자 이상이어야 합니다.".to_string(),
+        });
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(AppError::ValidationError(errors))
+    }
 }

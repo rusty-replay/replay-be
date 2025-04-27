@@ -1,6 +1,7 @@
 use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 use thiserror::Error;
 use std::fmt;
+use jsonwebtoken::errors::ErrorKind;
 use sea_orm::DbErr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +28,9 @@ pub enum ErrorCode {
     DatabaseError,
     InternalError,
     TokenGenerationFailed,
+    JwtInvalidToken,
+    JwtExpiredToken,
+
 }
 
 impl ErrorCode {
@@ -50,6 +54,8 @@ impl ErrorCode {
             ErrorCode::DatabaseError => "데이터베이스 오류가 발생했습니다",
             ErrorCode::InternalError => "내부 서버 오류가 발생했습니다",
             ErrorCode::TokenGenerationFailed => "토큰 생성에 실패했습니다",
+            ErrorCode::JwtInvalidToken => "JWT 토큰이 유효하지 않습니다",
+            ErrorCode::JwtExpiredToken => "JWT 토큰이 만료되었습니다",
         }
     }
 }
@@ -133,6 +139,15 @@ impl From<DbErr> for AppError {
             AppError::not_found(ErrorCode::ErrorLogNotFound)
         } else {
             AppError::internal_error(ErrorCode::DatabaseError)
+        }
+    }
+}
+
+impl From<jsonwebtoken::errors::Error> for AppError {
+    fn from(err: jsonwebtoken::errors::Error) -> Self {
+        match err.kind() {
+            ErrorKind::ExpiredSignature => AppError::unauthorized(ErrorCode::JwtExpiredToken),
+            _ => AppError::unauthorized(ErrorCode::JwtInvalidToken),
         }
     }
 }
