@@ -34,8 +34,8 @@ pub enum Relation {
     )]
     User,
 
-    #[sea_orm(has_many = "super::error_log::Entity")]
-    ErrorLog,
+    #[sea_orm(has_many = "super::event::Entity")]
+    Event,
 }
 
 impl Related<super::project::Entity> for Entity {
@@ -50,9 +50,9 @@ impl Related<super::user::Entity> for Entity {
     }
 }
 
-impl Related<super::error_log::Entity> for Entity {
+impl Related<super::event::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::ErrorLog.def()
+        Relation::Event.def()
     }
 }
 

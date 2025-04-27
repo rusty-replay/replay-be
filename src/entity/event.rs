@@ -1,12 +1,12 @@
-use chrono::Utc;
+use chrono::{Timelike, Utc};
 use sea_orm::entity::prelude::*;
 use serde_json::Value;
 use sea_orm::Set;
 use serde::{Deserialize, Serialize};
-use crate::model::error::ErrorReportRequest;
+use crate::model::event::EventReportRequest;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "error_logs")]
+#[sea_orm(table_name = "event")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
@@ -75,18 +75,19 @@ impl ActiveModelBehavior for ActiveModel {}
 
 impl ActiveModel {
     pub fn from_error_event(
-        event: &ErrorReportRequest,
+        event: &EventReportRequest,
         project_id: i32,
         issue_id: i32,
         group_hash: String,
     ) -> Self {
         let now = Utc::now();
+        let timestamp = event.timestamp.with_nanosecond(0).unwrap();
 
         Self {
             message: Set(event.message.clone()),
             stacktrace: Set(event.stacktrace.clone()),
             app_version: Set(event.app_version.clone()),
-            timestamp: Set(event.timestamp.clone()),
+            timestamp: Set(timestamp),
             group_hash: Set(group_hash),
             replay: Set(event.replay.clone()),
             environment: Set(event.environment.clone().unwrap_or("production".to_string())),

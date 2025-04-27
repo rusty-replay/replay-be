@@ -79,7 +79,7 @@ pub fn build_access_token_cookie(token: &str) -> Cookie<'_> {
         .http_only(true)
         .secure(true)
         .same_site(SameSite::Lax)
-        .max_age(time::Duration::seconds(3))
+        .max_age(time::Duration::days(3))
         .finish()
 }
 
@@ -89,6 +89,6 @@ pub fn build_refresh_token_cookie(token: &str) -> Cookie<'_> {
         .http_only(true)
         .secure(true)
         .same_site(SameSite::Lax)
-        .max_age(time::Duration::seconds(60))
+        .max_age(time::Duration::days(60))
         .finish()
 }

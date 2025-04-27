@@ -21,7 +21,7 @@ pub enum Relation {
     #[sea_orm(has_many = "super::issue::Entity")]
     AssignedIssues,
 
-    #[sea_orm(has_many = "super::error_log::Entity")]
+    #[sea_orm(has_many = "super::event::Entity")]
     ReportedErrors,
 }
 
@@ -31,7 +31,7 @@ impl Related<super::issue::Entity> for Entity {
     }
 }
 
-impl Related<super::error_log::Entity> for Entity {
+impl Related<super::event::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::ReportedErrors.def()
     }

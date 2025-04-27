@@ -17,7 +17,7 @@ use sea_orm::{Schema, DatabaseBackend, ConnectionTrait, Statement};
 use sea_query::MysqlQueryBuilder;
 use tracing_log::log::info;
 use tracing_subscriber::EnvFilter;
-use entity::{error_log, user};
+use entity::{event, user};
 use rusty_replay::telemetry::{get_subscriber, init_subscriber};
 use crate::auth::{auth_middleware};
 use crate::migration::{Migrator, MigratorTrait};
@@ -69,8 +69,8 @@ async fn main() -> anyhow::Result<()> {
             .service(api::login)
             .service(api::refresh_token)
 
-            .service(api::report_batch_errors)
-            .service(api::report_error)
+            .service(api::report_batch_events)
+            .service(api::report_event)
             .service(
                 scope("/api")
                     .wrap(from_fn(auth_middleware))
@@ -82,7 +82,7 @@ async fn main() -> anyhow::Result<()> {
                     .service(api::get_project)
 
                     .service(api::get_project_error)
-                    .service(api::list_project_errors)
+                    .service(api::list_project_events)
 
             )
     })

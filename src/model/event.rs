@@ -1,11 +1,11 @@
 use sea_orm::prelude::DateTimeWithTimeZone;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use crate::entity::error_log::Model as ErrorLogModel;
+use crate::entity::event::Model as EventModel;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ErrorReportRequest {
+pub struct EventReportRequest {
     pub message: String,
     pub stacktrace: String,
     pub app_version: String,
@@ -22,7 +22,7 @@ pub struct ErrorReportRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ErrorReportResponse {
+pub struct EventReportResponse {
     pub id: i32,
     pub message: String,
     pub stacktrace: String,
@@ -44,7 +44,7 @@ pub struct ErrorReportResponse {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ErrorReportListResponse {
+pub struct EventReportListResponse {
     pub id: i32,
     pub message: String,
     pub stacktrace: String,
@@ -56,8 +56,8 @@ pub struct ErrorReportListResponse {
     pub os: Option<String>,
 }
 
-impl From<ErrorLogModel> for ErrorReportListResponse {
-    fn from(model: ErrorLogModel) -> Self {
+impl From<EventModel> for EventReportListResponse {
+    fn from(model: EventModel) -> Self {
         Self {
             id: model.id,
             message: model.message,
@@ -78,8 +78,8 @@ impl From<ErrorLogModel> for ErrorReportListResponse {
 //     }
 // }
 
-impl From<ErrorLogModel> for ErrorReportResponse {
-    fn from(model: ErrorLogModel) -> Self {
+impl From<EventModel> for EventReportResponse {
+    fn from(model: EventModel) -> Self {
         Self {
             id: model.id,
             message: model.message,
@@ -104,15 +104,15 @@ impl From<ErrorLogModel> for ErrorReportResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BatchErrorReportRequest {
-    pub events: Vec<ErrorReportRequest>,
+pub struct BatchEventReportRequest {
+    pub events: Vec<EventReportRequest>,
 }
 
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BatchErrorReportResponse {
+pub struct BatchEventReportResponse {
     pub processed: usize,
     pub success: usize,
-    pub errors: Vec<String>,
+    pub events: Vec<String>,
 }

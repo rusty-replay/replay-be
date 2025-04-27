@@ -1,6 +1,6 @@
 use sea_orm::Schema;
 use sea_orm_migration::prelude::*;
-use crate::entity::error_log::Entity;
+use crate::entity::event::Entity;
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;

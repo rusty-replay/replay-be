@@ -30,13 +30,15 @@ pub enum ErrorCode {
     TokenGenerationFailed,
     JwtInvalidToken,
     JwtExpiredToken,
-    ExpiredRefreshToken
+    ExpiredRefreshToken,
+    MissingField,
 
 }
 
 impl ErrorCode {
     pub fn message(&self) -> &'static str {
         match self {
+            ErrorCode::MissingField => "필수 요청값이 누락되었습니다",
             ErrorCode::ValidationError => "요청값 유효성 검사에 실패했습니다",
             ErrorCode::DuplicateAccountEmail => "이미 등록된 이메일입니다. 로그인해주세요",
             ErrorCode::InvalidPassword => "비밀번호는 최소 8자 이상이어야 합니다",

@@ -1,5 +1,5 @@
 pub mod auth;
-pub mod error;
+pub mod event;
 pub mod global_error;
 pub mod project;
 

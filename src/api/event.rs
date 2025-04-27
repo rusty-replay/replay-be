@@ -1,17 +1,18 @@
 use std::env;
 use actix_web::{get, post, web, HttpResponse, Responder};
 use chrono::Utc;
-use sea_orm::{EntityTrait, Set, ActiveModelTrait, QueryOrder, DatabaseConnection, QueryFilter, Condition, ColumnTrait, PaginatorTrait};
-use crate::entity::error_log::{self, ActiveModel as ErrorLogActiveModel, Entity as ErrorLogEntity};
+use sea_orm::{EntityTrait, Set, ActiveModelTrait, QueryOrder, DatabaseConnection, QueryFilter, Condition, ColumnTrait, PaginatorTrait, DbErr};
+use crate::entity::event::{self, ActiveModel as EventActiveModel, Entity as EventEntity};
 use crate::entity::issue::{ActiveModel as IssueActiveModel, Entity as IssueEntity};
 use crate::entity::project::{Entity as ProjectEntity};
 use crate::entity::project_member::{self, Entity as ProjectMemberEntity};
-use crate::model::error::{BatchErrorReportRequest, BatchErrorReportResponse, ErrorReportListResponse, ErrorReportRequest, ErrorReportResponse};
+use crate::model::event::{BatchEventReportRequest, BatchEventReportResponse, EventReportListResponse, EventReportRequest, EventReportResponse};
 use sha2::{Sha256, Digest};
 use crate::util::slack::send_slack_alert;
 use crate::entity::{issue, project};
 use crate::model::global_error::{AppError, ErrorCode};
 use std::sync::LazyLock;
+use crate::api::project::check_project_member;
 
 static SLACK_WEBHOOK_URL: LazyLock<String> = LazyLock::new(|| {
     env::var("SLACK_WEBHOOK_URL").expect("SLACK_WEBHOOK_URL 환경 변수가 설정되어야 합니다.")
@@ -117,15 +118,15 @@ async fn create_or_update_issue(db: &DatabaseConnection, project_id: i32, group_
     }
 }
 
-#[post("/batch-errors")]
-pub async fn report_batch_errors(
-    body: web::Json<BatchErrorReportRequest>,
+#[post("/batch-events")]
+pub async fn report_batch_events(
+    body: web::Json<BatchEventReportRequest>,
     db: web::Data<DatabaseConnection>,
 ) -> Result<HttpResponse, AppError> {
-    println!("Batch error report: {:?}", body);
+    println!("Batch event report: {:?}", body);
 
     let mut success_count = 0;
-    let mut errors = Vec::new();
+    let mut events = Vec::new();
     let mut project_id_opt: Option<i32> = None;
 
     println!("Processing {} events", body.events.len());
@@ -136,13 +137,13 @@ pub async fn report_batch_errors(
                 success_count += 1;
                 project_id_opt = Some(pid);
             },
-            Err(e) => errors.push(format!("이벤트 #{} 처리 중 오류: {}", index, e)),
+            Err(e) => events.push(format!("이벤트 #{} 처리 중 오류: {}", index, e)),
         }
     }
 
     if let Some(project_id) = project_id_opt {
-        let count = ErrorLogEntity::find()
-            .filter(error_log::Column::ProjectId.eq(project_id))
+        let count = EventEntity::find()
+            .filter(event::Column::ProjectId.eq(project_id))
             .count(db.get_ref())
             .await
             .unwrap_or(0);
@@ -155,37 +156,55 @@ pub async fn report_batch_errors(
         }
     }
 
-    Ok(HttpResponse::Ok().json(BatchErrorReportResponse {
+    Ok(HttpResponse::Ok().json(BatchEventReportResponse {
         processed: body.events.len(),
         success: success_count,
-        errors,
+        events,
     }))
 }
 
 async fn process_event(
     db: &DatabaseConnection,
-    event: &ErrorReportRequest,
+    event: &EventReportRequest,
 ) -> Result<i32, AppError> {
     let project_id = find_project_by_api_key(db, &event.api_key).await?;
     let group_hash = calculate_group_hash(&event.message, &event.stacktrace);
     let issue_id = create_or_update_issue(db, project_id, &group_hash, &event.message).await?;
 
-    let new_log = ErrorLogActiveModel::from_error_event(event, project_id, issue_id, group_hash);
+    let new_log = EventActiveModel::from_error_event(event, project_id, issue_id, group_hash);
+    match new_log.insert(db).await {
+        Ok(_) => Ok(project_id),
+        Err(DbErr::Exec(error)) => {
+            println!("DB Exec Error: {}", error);
+            // 예: insert 실행 실패했을 때 (SQL syntax error, constraint error 등)
+            Err(AppError::internal_error(ErrorCode::InternalError))
+        }
+        Err(DbErr::Query(error)) => {
+            println!("DB Exec Error: {}", error);
+            // 예: query 실패했을 때
+            Err(AppError::internal_error(ErrorCode::InternalError))
+        }
+        Err(other) => {
+            println!("DB Exec Error: {}", other);
+            // 다른 모든 에러
+            Err(AppError::internal_error(ErrorCode::InternalError))
+        }
+    }.expect("TODO: panic message");
 
-    let _ = new_log.insert(db).await?;
+    // let _ = new_log.insert(db).await?;
 
     Ok(project_id)
 }
 
-#[post("/errors")]
-pub async fn report_error(
-    body: web::Json<ErrorReportRequest>,
+#[post("/events")]
+pub async fn report_event(
+    body: web::Json<EventReportRequest>,
     db: web::Data<DatabaseConnection>,
 ) -> Result<HttpResponse, AppError> {
     let project_id = find_project_by_api_key(db.get_ref(), &body.api_key).await?;
     let group_hash = calculate_group_hash(&body.message, &body.stacktrace);
     let issue_id = create_or_update_issue(db.get_ref(), project_id, &group_hash, &body.message).await?;
-    let new_log = ErrorLogActiveModel::from_error_event(
+    let new_log = EventActiveModel::from_error_event(
         &body,
         project_id,
         issue_id,
@@ -194,11 +213,11 @@ pub async fn report_error(
 
     let inserted = new_log.insert(db.get_ref()).await?;
 
-    Ok(HttpResponse::Created().json(ErrorReportListResponse::from(inserted)))
+    Ok(HttpResponse::Created().json(EventReportListResponse::from(inserted)))
 }
 
-#[get("/projects/{project_id}/errors")]
-pub async fn list_project_errors(
+#[get("/projects/{project_id}/events")]
+pub async fn list_project_events(
     db: web::Data<DatabaseConnection>,
     path: web::Path<i32>,
     auth_user: web::ReqData<i32>,
@@ -206,29 +225,18 @@ pub async fn list_project_errors(
     let project_id = path.into_inner();
     let user_id = auth_user.into_inner();
 
-    let is_member = ProjectMemberEntity::find()
-        .filter(
-            Condition::all()
-                .add(project_member::Column::ProjectId.eq(project_id))
-                .add(project_member::Column::UserId.eq(user_id))
-        )
-        .one(db.get_ref())
-        .await?;
+    check_project_member(db.get_ref(), project_id, user_id).await?;
 
-    if is_member.is_none() {
-        return Err(AppError::forbidden(ErrorCode::NotEnoughPermission));
-    }
-
-    let logs = ErrorLogEntity::find()
-        .filter(error_log::Column::ProjectId.eq(project_id))
-        .order_by_desc(error_log::Column::CreatedAt)
+    let logs = EventEntity::find()
+        .filter(event::Column::ProjectId.eq(project_id))
+        .order_by_desc(event::Column::CreatedAt)
         // .limit(100)
         .all(db.get_ref())
         .await?;
 
-    let response: Vec<ErrorReportListResponse> = logs
+    let response: Vec<EventReportListResponse> = logs
         .into_iter()
-        .map(|l| ErrorReportListResponse::from(l))
+        .map(|l| EventReportListResponse::from(l))
         // .map(Into::into)
         // .map(|l| l.into())
         .collect();
@@ -236,7 +244,7 @@ pub async fn list_project_errors(
     Ok(HttpResponse::Ok().json(response))
 }
 
-#[get("/projects/{project_id}/errors/{id}")]
+#[get("/projects/{project_id}/events/{id}")]
 pub async fn get_project_error(
     db: web::Data<DatabaseConnection>,
     path: web::Path<(i32, i32)>,
@@ -258,16 +266,16 @@ pub async fn get_project_error(
         return Err(AppError::forbidden(ErrorCode::NotEnoughPermission));
     }
 
-    let log = ErrorLogEntity::find()
+    let log = EventEntity::find()
         .filter(
             Condition::all()
-                .add(error_log::Column::Id.eq(error_id))
-                .add(error_log::Column::ProjectId.eq(project_id))
+                .add(event::Column::Id.eq(error_id))
+                .add(event::Column::ProjectId.eq(project_id))
         )
         .one(db.get_ref())
         .await?
         .ok_or_else(|| AppError::not_found(ErrorCode::ErrorLogNotFound))?;
 
 
-    Ok(HttpResponse::Ok().json(ErrorReportResponse::from(log)))
+    Ok(HttpResponse::Ok().json(EventReportResponse::from(log)))
 }
