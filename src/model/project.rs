@@ -15,12 +15,14 @@ pub struct ProjectUpdateRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProjectInviteRequest {
     pub user_id: i32,
     pub role: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProjectResponse {
     pub id: i32,
     pub name: String,
