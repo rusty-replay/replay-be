@@ -1,12 +1,12 @@
 use std::env;
-use actix_web::{get, post, web, HttpResponse, Responder};
+use actix_web::{get, post, web, HttpResponse};
 use chrono::Utc;
-use sea_orm::{EntityTrait, Set, ActiveModelTrait, QueryOrder, DatabaseConnection, QueryFilter, Condition, ColumnTrait, PaginatorTrait, DbErr};
+use sea_orm::{EntityTrait, Set, ActiveModelTrait, QueryOrder, DatabaseConnection, QueryFilter, Condition, ColumnTrait, PaginatorTrait, DbErr, QuerySelect, QueryTrait};
 use crate::entity::event::{self, ActiveModel as EventActiveModel, Entity as EventEntity};
 use crate::entity::issue::{ActiveModel as IssueActiveModel, Entity as IssueEntity};
 use crate::entity::project::{Entity as ProjectEntity};
 use crate::entity::project_member::{self, Entity as ProjectMemberEntity};
-use crate::model::event::{BatchEventReportRequest, BatchEventReportResponse, EventReportListResponse, EventReportRequest, EventReportResponse};
+use crate::model::event::{BatchEventReportRequest, BatchEventReportResponse, EventQuery, EventReportListResponse, EventReportRequest, EventReportResponse, PaginatedResponse};
 use sha2::{Sha256, Digest};
 use crate::util::slack::send_slack_alert;
 use crate::entity::{issue, project};
@@ -190,15 +190,24 @@ pub async fn report_event(
 #[utoipa::path(
     get,
     path = "/api/projects/{project_id}/events",
-    summary = "프로젝트 이벤트 목록 조회",
+    params(
+        ("project_id" = i32, Path, description = "프로젝트 ID"),
+        ("search" = Option<String>, Query, description = "검색어"),
+        ("page" = Option<i32>, Query, description = "페이지 번호"),
+        ("page_size" = Option<i32>, Query, description = "페이지 크기"),
+        ("start_date" = Option<String>, Query, description = "시작일 (ISO8601)"),
+        ("end_date" = Option<String>, Query, description = "종료일 (ISO8601)")
+    ),
     responses(
         (status = 200, description = "이벤트 목록 조회 성공", body = Vec<EventReportListResponse>),
     ),
 )]
+
 #[get("/projects/{project_id}/events")]
 pub async fn list_project_events(
     db: web::Data<DatabaseConnection>,
     path: web::Path<i32>,
+    query: web::Query<EventQuery>,
     auth_user: web::ReqData<i32>,
 ) -> Result<HttpResponse, AppError> {
     let project_id = path.into_inner();
@@ -206,19 +215,59 @@ pub async fn list_project_events(
 
     check_project_member(db.get_ref(), project_id, user_id).await?;
 
-    let logs = EventEntity::find()
+    let EventQuery { search, page, page_size, start_date, end_date } = query.into_inner();
+
+    let page = page.unwrap_or(1).max(1);
+    let page_size = page_size.unwrap_or(20).min(100);
+    let offset = (page - 1) * page_size;
+
+    let total_elements = EventEntity::find()
         .filter(event::Column::ProjectId.eq(project_id))
+        .count(db.get_ref())
+        .await?;
+
+    let mut query = EventEntity::find()
+        .filter(event::Column::ProjectId.eq(project_id));
+
+    if let Some(search_term) = search {
+        let pattern = format!("%{}%", search_term);
+        query = query.filter(
+            Condition::any()
+                .add(event::Column::Message.like(&pattern))
+                .add(event::Column::Stacktrace.like(&pattern))
+                .add(event::Column::AppVersion.like(&pattern))
+        );
+    }
+
+    if let Some(start) = start_date {
+        query = query.filter(event::Column::Timestamp.gte(start));
+    }
+    if let Some(end) = end_date {
+        query = query.filter(event::Column::Timestamp.lte(end));
+    }
+
+    let filtered_elements = query.clone().count(db.get_ref()).await?;
+
+    let logs = query
         .order_by_desc(event::Column::CreatedAt)
-        // .limit(100)
+        .order_by_desc(event::Column::Id)
+        .offset(Some(offset as u64))
+        .limit(Some(page_size as u64))
         .all(db.get_ref())
         .await?;
 
-    let response: Vec<EventReportListResponse> = logs
-        .into_iter()
-        .map(|l| EventReportListResponse::from(l))
-        // .map(Into::into)
-        // .map(|l| l.into())
-        .collect();
+    let response = PaginatedResponse {
+        content: logs
+            .into_iter()
+            .map(EventReportListResponse::from)
+            .collect::<Vec<_>>(),
+        page,
+        page_size,
+        total_elements,
+        filtered_elements,
+        total_pages: ((filtered_elements as f64) / (page_size as f64)).ceil() as u32,
+        has_next: (offset + page_size) < (filtered_elements as u32),
+    };
 
     Ok(HttpResponse::Ok().json(response))
 }

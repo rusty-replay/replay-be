@@ -117,3 +117,24 @@ pub struct BatchEventReportResponse {
     pub success: usize,
     pub events: Vec<String>,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct EventQuery {
+    pub search: Option<String>,
+    pub page: Option<u32>,
+    pub page_size: Option<u32>,
+    pub start_date: Option<DateTime<Utc>>,
+    pub end_date: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaginatedResponse<T> {
+    pub content: Vec<T>,
+    pub page: u32,
+    pub page_size: u32,
+    pub total_elements: u64,
+    pub filtered_elements: u64,
+    pub total_pages: u32,
+    pub has_next: bool,
+}
