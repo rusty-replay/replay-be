@@ -119,6 +119,7 @@ pub struct BatchEventReportResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EventQuery {
     pub search: Option<String>,
     pub page: Option<u32>,
