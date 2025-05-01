@@ -10,7 +10,7 @@ use crate::model::project::{ProjectCreateRequest, ProjectDetailResponse, Project
 
 #[utoipa::path(
     post,
-    path = "/projects",
+    path = "/api/projects",
     summary = "프로젝트 생성",
     request_body = ProjectCreateRequest,
     responses(
@@ -52,7 +52,7 @@ pub async fn create_project(
 
 #[utoipa::path(
     get,
-    path = "/projects",
+    path = "/api/projects",
     summary = "프로젝트 목록 조회",
     responses(
         (status = 200, description = "프로젝트 목록 조회 성공", body = Vec<ProjectResponse>),
@@ -84,7 +84,7 @@ pub async fn list_user_projects(
 
 #[utoipa::path(
     get,
-    path = "/projects/{id}",
+    path = "/api/projects/{id}",
     summary = "프로젝트 상세 정보 조회",
     params(
         ("id", description = "프로젝트 ID", example = 1),
@@ -139,7 +139,7 @@ pub async fn get_project(
 
 #[utoipa::path(
     put,
-    path = "/projects/{id}",
+    path = "/api/projects/{id}",
     summary = "프로젝트 업데이트",
     request_body = ProjectUpdateRequest,
     responses(

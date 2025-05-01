@@ -159,7 +159,7 @@ pub async fn refresh_token(
 
 #[utoipa::path(
     get,
-    path = "/auth/me",
+    path = "/api/auth/me",
     summary = "내 정보 조회",
     responses(
         (status = 200, description = "내 정보 조회 성공", body = UserResponse),

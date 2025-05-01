@@ -189,7 +189,7 @@ pub async fn report_event(
 
 #[utoipa::path(
     get,
-    path = "/projects/{project_id}/events",
+    path = "/api/projects/{project_id}/events",
     summary = "프로젝트 이벤트 목록 조회",
     responses(
         (status = 200, description = "이벤트 목록 조회 성공", body = Vec<EventReportListResponse>),
@@ -225,7 +225,7 @@ pub async fn list_project_events(
 
 #[utoipa::path(
     get,
-    path = "/projects/{project_id}/events/{id}",
+    path = "/api/projects/{project_id}/events/{id}",
     summary = "프로젝트 이벤트 상세 조회",
     responses(
         (status = 200, description = "이벤트 상세 조회 성공", body = EventReportResponse),
