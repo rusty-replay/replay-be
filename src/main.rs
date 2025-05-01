@@ -67,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
             .app_data(JsonConfig::default().limit(10 * 1024 * 1024))
             .wrap(cors)
             .app_data(db_data.clone())
-            .service(api::health_check)
+            .service(api::health_check::health_check)
             .service(api::register)
             .service(api::login)
             .service(api::refresh_token)
@@ -99,7 +99,7 @@ async fn main() -> anyhow::Result<()> {
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        crate::api::event::health_check,
+        crate::api::health_check::health_check,
         crate::api::project::create_project,
         crate::api::project::update_project,
         crate::api::project::list_user_projects,

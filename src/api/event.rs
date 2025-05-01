@@ -19,18 +19,6 @@ static SLACK_WEBHOOK_URL: LazyLock<String> = LazyLock::new(|| {
 });
 const ERROR_THRESHOLD: usize = 1;
 
-#[utoipa::path(
-    get,
-    path = "/health-check",
-    responses(
-        (status = 200, description = "서버가 정상 동작 중", body = String)
-    )
-)]
-#[get("/health-check")]
-pub async fn health_check() -> impl Responder {
-    HttpResponse::Ok().body("OK")
-}
-
 fn calculate_group_hash(message: &str, stack: &str) -> String {
     // 메시지에서 변수 부분 정규화 (숫자, ID 등 제거)
     let normalized_message = message
