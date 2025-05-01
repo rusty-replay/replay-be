@@ -1,9 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use utoipa::ToSchema;
 use crate::entity::event::Model as EventModel;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EventReportRequest {
     pub message: String,
@@ -20,7 +21,7 @@ pub struct EventReportRequest {
     pub additional_info: Option<Value>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EventReportResponse {
     pub id: i32,
@@ -42,7 +43,7 @@ pub struct EventReportResponse {
     pub updated_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EventReportListResponse {
     pub id: i32,
@@ -102,14 +103,14 @@ impl From<EventModel> for EventReportResponse {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BatchEventReportRequest {
     pub events: Vec<EventReportRequest>,
 }
 
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BatchEventReportResponse {
     pub processed: usize,

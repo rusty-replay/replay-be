@@ -8,6 +8,17 @@ use crate::entity::user::{self, Entity as UserEntity};
 use crate::model::auth::{RegisterRequest, LoginRequest, UserResponse};
 use crate::auth::jwt::{build_access_token_cookie, build_refresh_token_cookie, JwtUtils, TokenVerifyResult};
 
+#[utoipa::path(
+    post,
+    path = "/auth/register",
+    summary = "회원가입",
+    request_body = RegisterRequest,
+    responses(
+        (status = 201, description = "회원가입 성공", body = UserResponse),
+        (status = 400, description = "잘못된 요청", body = ValidationFieldError),
+        (status = 409, description = "중복된 이메일 또는 사용자명"),
+    ),
+)]
 #[post("/auth/register")]
 pub async fn register(
     body: web::Json<RegisterRequest>,
@@ -58,6 +69,17 @@ pub async fn register(
     )
 }
 
+#[utoipa::path(
+    post,
+    path = "/auth/login",
+    summary = "로그인",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "로그인 성공", body = UserResponse),
+        (status = 400, description = "잘못된 요청", body = ValidationFieldError),
+        (status = 401, description = "잘못된 이메일 또는 비밀번호"),
+    ),
+)]
 #[post("/auth/login")]
 pub async fn login(
     body: web::Json<LoginRequest>,
@@ -92,6 +114,15 @@ pub async fn login(
     )
 }
 
+#[utoipa::path(
+    post,
+    path = "/auth/refresh",
+    summary = "리프레시 토큰",
+    responses(
+        (status = 200, description = "리프레시 토큰 성공"),
+        (status = 401, description = "잘못된 리프레시 토큰"),
+    ),
+)]
 #[post("/auth/refresh")]
 pub async fn refresh_token(
     req: actix_web::HttpRequest,
@@ -126,6 +157,15 @@ pub async fn refresh_token(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/auth/me",
+    summary = "내 정보 조회",
+    responses(
+        (status = 200, description = "내 정보 조회 성공", body = UserResponse),
+        (status = 401, description = "인증되지 않음"),
+    ),
+)]
 #[get("/auth/me")]
 pub async fn get_me(
     db: web::Data<DatabaseConnection>,

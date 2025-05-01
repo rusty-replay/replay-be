@@ -40,7 +40,7 @@ pub struct Claims {
     pub iat: usize,       // 발행 시간 (Unix timestamp)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UserResponse {
     pub id: i32,

@@ -14,41 +14,6 @@ use crate::model::global_error::{AppError, ErrorCode};
 use std::sync::LazyLock;
 use crate::api::project::check_project_member;
 
-static SLACK_WEBHOOK_URL: LazyLock<String> = LazyLock::new(|| {
-    env::var("SLACK_WEBHOOK_URL").expect("SLACK_WEBHOOK_URL 환경 변수가 설정되어야 합니다.")
-});
-const ERROR_THRESHOLD: usize = 1;
-
-fn calculate_group_hash(message: &str, stack: &str) -> String {
-    // 메시지에서 변수 부분 정규화 (숫자, ID 등 제거)
-    let normalized_message = message
-        .replace(|c: char| c.is_numeric(), "0")
-        .replace(|c: char| c.is_ascii_hexdigit() && !c.is_numeric(), "X");
-
-    // 스택트레이스에서 중요 부분만 추출 (파일 경로, 라인 번호 제외)
-    let stack_lines: Vec<&str> = stack.lines().collect();
-    let mut important_stack = String::new();
-
-    // stack trace 처음 3줄만 사용
-    for i in 0..std::cmp::min(3, stack_lines.len()) {
-        if let Some(func_pos) = stack_lines[i].find("at ") {
-            if let Some(file_pos) = stack_lines[i][func_pos..].find(" (") {
-                important_stack.push_str(&stack_lines[i][func_pos..func_pos+file_pos]);
-                important_stack.push('\n');
-            } else {
-                important_stack.push_str(stack_lines[i]);
-                important_stack.push('\n');
-            }
-        }
-    }
-
-    let mut hasher = Sha256::new();
-    hasher.update(normalized_message);
-    hasher.update(important_stack);
-    let result = hasher.finalize();
-    format!("{:x}", result)
-}
-
 async fn find_project_by_api_key(db: &DatabaseConnection, api_key: &str) -> Result<i32, AppError> {
     let project = ProjectEntity::find()
         .filter(project::Column::ApiKey.eq(api_key))
@@ -106,6 +71,15 @@ async fn create_or_update_issue(db: &DatabaseConnection, project_id: i32, group_
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/batch-events",
+    summary = "이벤트 batch report",
+    request_body = BatchEventReportRequest,
+    responses(
+        (status = 200, description = "이벤트 전송 성공", body = BatchEventReportResponse),
+    ),
+)]
 #[post("/batch-events")]
 pub async fn report_batch_events(
     body: web::Json<BatchEventReportRequest>,
@@ -184,6 +158,15 @@ async fn process_event(
     Ok(project_id)
 }
 
+#[utoipa::path(
+    post,
+    path = "/events",
+    summary = "이벤트 단일 report",
+    request_body = EventReportRequest,
+    responses(
+        (status = 201, description = "이벤트 전송 성공", body = EventReportListResponse),
+    ),
+)]
 #[post("/events")]
 pub async fn report_event(
     body: web::Json<EventReportRequest>,
@@ -204,6 +187,14 @@ pub async fn report_event(
     Ok(HttpResponse::Created().json(EventReportListResponse::from(inserted)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/projects/{project_id}/events",
+    summary = "프로젝트 이벤트 목록 조회",
+    responses(
+        (status = 200, description = "이벤트 목록 조회 성공", body = Vec<EventReportListResponse>),
+    ),
+)]
 #[get("/projects/{project_id}/events")]
 pub async fn list_project_events(
     db: web::Data<DatabaseConnection>,
@@ -232,8 +223,16 @@ pub async fn list_project_events(
     Ok(HttpResponse::Ok().json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/projects/{project_id}/events/{id}",
+    summary = "프로젝트 이벤트 상세 조회",
+    responses(
+        (status = 200, description = "이벤트 상세 조회 성공", body = EventReportResponse),
+    ),
+)]
 #[get("/projects/{project_id}/events/{id}")]
-pub async fn get_project_error(
+pub async fn get_project_events(
     db: web::Data<DatabaseConnection>,
     path: web::Path<(i32, i32)>,
     auth_user: web::ReqData<i32>,
@@ -266,4 +265,40 @@ pub async fn get_project_error(
 
 
     Ok(HttpResponse::Ok().json(EventReportResponse::from(log)))
+}
+
+
+static SLACK_WEBHOOK_URL: LazyLock<String> = LazyLock::new(|| {
+    env::var("SLACK_WEBHOOK_URL").expect("SLACK_WEBHOOK_URL 환경 변수가 설정되어야 합니다.")
+});
+const ERROR_THRESHOLD: usize = 1;
+
+fn calculate_group_hash(message: &str, stack: &str) -> String {
+    // 메시지에서 변수 부분 정규화 (숫자, ID 등 제거)
+    let normalized_message = message
+        .replace(|c: char| c.is_numeric(), "0")
+        .replace(|c: char| c.is_ascii_hexdigit() && !c.is_numeric(), "X");
+
+    // 스택트레이스에서 중요 부분만 추출 (파일 경로, 라인 번호 제외)
+    let stack_lines: Vec<&str> = stack.lines().collect();
+    let mut important_stack = String::new();
+
+    // stack trace 처음 3줄만 사용
+    for i in 0..std::cmp::min(3, stack_lines.len()) {
+        if let Some(func_pos) = stack_lines[i].find("at ") {
+            if let Some(file_pos) = stack_lines[i][func_pos..].find(" (") {
+                important_stack.push_str(&stack_lines[i][func_pos..func_pos+file_pos]);
+                important_stack.push('\n');
+            } else {
+                important_stack.push_str(stack_lines[i]);
+                important_stack.push('\n');
+            }
+        }
+    }
+
+    let mut hasher = Sha256::new();
+    hasher.update(normalized_message);
+    hasher.update(important_stack);
+    let result = hasher.finalize();
+    format!("{:x}", result)
 }

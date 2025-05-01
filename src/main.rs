@@ -84,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
                     .service(api::list_user_projects)
                     .service(api::get_project)
 
-                    .service(api::get_project_error)
+                    .service(api::get_project_events)
                     .service(api::list_project_events)
             )
             .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", ApiDoc::openapi()))
@@ -104,6 +104,16 @@ async fn main() -> anyhow::Result<()> {
         crate::api::project::update_project,
         crate::api::project::list_user_projects,
         crate::api::project::get_project,
+
+        crate::api::event::report_event,
+        crate::api::event::report_batch_events,
+        crate::api::event::get_project_events,
+        crate::api::event::list_project_events,
+
+        crate::api::auth::register,
+        crate::api::auth::login,
+        crate::api::auth::refresh_token,
+        crate::api::auth::get_me,
     ),
 )]
 struct ApiDoc;

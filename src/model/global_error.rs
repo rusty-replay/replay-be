@@ -3,6 +3,8 @@ use thiserror::Error;
 use std::fmt;
 use jsonwebtoken::errors::ErrorKind;
 use sea_orm::DbErr;
+use serde::Serialize;
+use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {
@@ -113,13 +115,13 @@ impl AppError {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ValidationFieldError {
     pub field: String,
     pub message: String,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 #[serde(untagged)]
 enum ErrorResponse {
