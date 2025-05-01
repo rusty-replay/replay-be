@@ -1,14 +1,15 @@
-use sea_orm::prelude::DateTimeWithTimeZone;
 use serde::{Deserialize, Serialize};
 use crate::entity::project::Model as ProjectModel;
+use chrono::{DateTime, Utc};
+use utoipa::ToSchema;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ProjectCreateRequest {
     pub name: String,
     pub description: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ProjectUpdateRequest {
     pub name: Option<String>,
     pub description: Option<String>,
@@ -28,8 +29,8 @@ pub struct ProjectResponse {
     pub name: String,
     pub api_key: String,
     pub description: Option<String>,
-    pub created_at: DateTimeWithTimeZone,
-    pub updated_at: DateTimeWithTimeZone,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl From<ProjectModel> for ProjectResponse {
@@ -52,7 +53,7 @@ pub struct ProjectMemberResponse {
     pub username: String,
     pub email: String,
     pub role: String,
-    pub joined_at: DateTimeWithTimeZone,
+    pub joined_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -28,11 +28,12 @@ sea-query = "0.32.3"
 actix-cors = "0.7.1"
 tracing-bunyan-formatter = "0.3.10"
 jsonwebtoken = "9.3.1"
-chrono = "0.4.40"
+chrono = { version = "0.4.24", features = ["serde"] }
 bcrypt = "0.17.0"
 sea-orm-migration = "1.1.10"
 log = "0.4.27"
 utoipa-actix-web = "0.1.2"
-utoipa = { version = "5.3.1", features = ["chrono"] }
+utoipa = { version = "5.3.1", features = ["chrono", "actix_extras"] }
 reqwest = { version = "0.12.15", features = ["json", "rustls-tls"] }
 time = "0.3.41"
+utoipa-swagger-ui = { version = "9.0.1", features = ["actix-web"] }

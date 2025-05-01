@@ -1,5 +1,6 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+use chrono::{DateTime, Utc};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "issues")]
@@ -9,13 +10,13 @@ pub struct Model {
     pub title: String,
     pub group_hash: String,
     pub status: String,  // "open", "in_progress", "resolved", "ignored"
-    pub first_seen: DateTimeWithTimeZone,
-    pub last_seen: DateTimeWithTimeZone,
+    pub first_seen: DateTime<Utc>,
+    pub last_seen: DateTime<Utc>,
     pub count: i32,
     pub project_id: i32,
     pub assigned_to: Option<i32>,  // 담당 사용자 ID
-    pub created_at: DateTimeWithTimeZone,
-    pub updated_at: DateTimeWithTimeZone,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

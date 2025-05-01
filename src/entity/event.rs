@@ -1,4 +1,4 @@
-use chrono::{Timelike, Utc};
+use chrono::{Utc, DateTime};
 use sea_orm::entity::prelude::*;
 use serde_json::Value;
 use sea_orm::Set;
@@ -13,7 +13,7 @@ pub struct Model {
     pub message: String,
     pub stacktrace: String,
     pub app_version: String,
-    pub timestamp: DateTimeWithTimeZone,
+    pub timestamp: DateTime<Utc>,
     pub group_hash: String,
     pub replay: Option<Value>,
     pub environment: String,  // "development", "staging", "production"
@@ -25,8 +25,8 @@ pub struct Model {
     pub issue_id: Option<i32>,  // 이슈와 연결
     pub reported_by: Option<i32>,
     pub additional_info: Option<Value>,
-    pub created_at: DateTimeWithTimeZone,
-    pub updated_at: DateTimeWithTimeZone,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -81,13 +81,13 @@ impl ActiveModel {
         group_hash: String,
     ) -> Self {
         let now = Utc::now();
-        let timestamp = event.timestamp.with_nanosecond(0).unwrap();
+        let timestamp = event.timestamp;
 
         Self {
             message: Set(event.message.clone()),
             stacktrace: Set(event.stacktrace.clone()),
             app_version: Set(event.app_version.clone()),
-            timestamp: Set(timestamp),
+            timestamp: Set(timestamp.into()),
             group_hash: Set(group_hash),
             replay: Set(event.replay.clone()),
             environment: Set(event.environment.clone().unwrap_or("production".to_string())),

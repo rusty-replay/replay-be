@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 use sea_orm::Set;
 use serde::{Deserialize, Serialize};
@@ -11,8 +12,8 @@ pub struct Model {
     pub name: String,
     pub description: Option<String>,
     pub api_key: String,
-    pub created_at: DateTimeWithTimeZone,
-    pub updated_at: DateTimeWithTimeZone,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -27,7 +28,11 @@ impl Related<super::event::Entity> for Entity {
     }
 }
 
-impl ActiveModelBehavior for ActiveModel {}
+impl ActiveModelBehavior for ActiveModel {
+    // before save automatically save created_at and updated_at
+    // caution!! Method `before_save` has 1 parameter, but the declaration in trait `ActiveModelBehavior` has 2 [E0050]
+
+}
 
 impl ActiveModel {
     pub fn from_request(request: ProjectCreateRequest) -> Self {

@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -12,7 +13,7 @@ pub struct Model {
 
     pub role: String,  // "owner", "admin", "member", "viewer"
 
-    pub joined_at: DateTimeWithTimeZone,
+    pub joined_at: DateTime<Utc>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

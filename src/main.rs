@@ -17,6 +17,9 @@ use sea_orm::{Schema, DatabaseBackend, ConnectionTrait, Statement};
 use sea_query::MysqlQueryBuilder;
 use tracing_log::log::info;
 use tracing_subscriber::EnvFilter;
+use utoipa::OpenApi;
+use utoipa_actix_web::AppExt;
+use utoipa_swagger_ui::SwaggerUi;
 use entity::{event, user};
 use rusty_replay::telemetry::{get_subscriber, init_subscriber};
 use crate::auth::{auth_middleware};
@@ -83,8 +86,8 @@ async fn main() -> anyhow::Result<()> {
 
                     .service(api::get_project_error)
                     .service(api::list_project_events)
-
             )
+            .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", ApiDoc::openapi()))
     })
         .bind(("127.0.0.1", 8081))?
         .run()
@@ -92,3 +95,14 @@ async fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        crate::api::event::health_check,
+    ),
+    tags(
+        (name = "Health Check", description = "Health Check API"),
+    )
+)]
+struct ApiDoc;

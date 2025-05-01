@@ -1,4 +1,4 @@
-use sea_orm::prelude::DateTimeWithTimeZone;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use crate::entity::event::Model as EventModel;
@@ -9,7 +9,7 @@ pub struct EventReportRequest {
     pub message: String,
     pub stacktrace: String,
     pub app_version: String,
-    pub timestamp: DateTimeWithTimeZone,
+    pub timestamp: DateTime<Utc>,
     pub replay: Option<Value>,
     pub environment: Option<String>, // "development", "staging", "production"
     pub browser: Option<String>,
@@ -27,7 +27,7 @@ pub struct EventReportResponse {
     pub message: String,
     pub stacktrace: String,
     pub app_version: String,
-    pub timestamp: DateTimeWithTimeZone,
+    pub timestamp: DateTime<Utc>,
     pub group_hash: String,
     pub replay: Option<Value>,
     pub environment: String,
@@ -49,7 +49,7 @@ pub struct EventReportListResponse {
     pub message: String,
     pub stacktrace: String,
     pub app_version: String,
-    pub timestamp: DateTimeWithTimeZone,
+    pub timestamp: DateTime<Utc>,
     pub group_hash: String,
     pub issue_id: Option<i32>,
     pub browser: Option<String>,
@@ -85,7 +85,7 @@ impl From<EventModel> for EventReportResponse {
             message: model.message,
             stacktrace: model.stacktrace,
             app_version: model.app_version,
-            timestamp: model.timestamp,
+            timestamp: model.timestamp.into(),
             group_hash: model.group_hash,
             replay: model.replay,
             environment: model.environment,

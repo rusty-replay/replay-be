@@ -1,4 +1,5 @@
 use actix_web::{delete, get, post, put, web, HttpResponse};
+use chrono::Utc;
 use sea_orm::{Set, ActiveModelTrait, EntityTrait, QueryFilter, ColumnTrait, DatabaseConnection};
 use sea_query::Condition;
 use crate::entity::project_member::{Entity as ProjectMemberEntity, ActiveModel as ProjectMemberActiveModel};
@@ -7,6 +8,14 @@ use crate::entity::{project_member, user};
 use crate::model::global_error::{AppError, ErrorCode};
 use crate::model::project::{ProjectCreateRequest, ProjectDetailResponse, ProjectMemberResponse, ProjectResponse, ProjectUpdateRequest};
 
+#[utoipa::path(
+    post,
+    path = "/projects",
+    request_body = ProjectCreateRequest,
+    security(
+        ("BearerAuth" = [])
+    )
+)]
 #[post("/projects")]
 pub async fn create_project(
     body: web::Json<ProjectCreateRequest>,
@@ -57,6 +66,8 @@ pub async fn list_user_projects(
         .filter_map(|(_, projects)| projects.first().cloned().map(ProjectResponse::from))
         .collect();
 
+    println!("projects list: {:?}", response);
+
     Ok(HttpResponse::Ok().json(response))
 }
 
@@ -94,7 +105,7 @@ pub async fn get_project(
             username: u.username.clone(),
             email: u.email.clone(),
             role: member.role.clone(),
-            joined_at: member.joined_at,
+            joined_at: member.joined_at.into(),
         }))
         .collect();
 
@@ -129,7 +140,7 @@ pub async fn update_project(
     if let Some(description) = &body.description {
         project_model.description = Set(Some(description.clone()));
     }
-    project_model.updated_at = Set(chrono::Utc::now().into());
+    project_model.updated_at = Set(Utc::now());
 
     let updated_project = project_model.update(db.get_ref()).await?;
 
