@@ -100,6 +100,11 @@ async fn main() -> anyhow::Result<()> {
 #[openapi(
     paths(
         crate::api::health_check::health_check,
+        crate::api::auth::register,
+        crate::api::auth::login,
+        crate::api::auth::refresh_token,
+        crate::api::auth::get_me,
+
         crate::api::project::create_project,
         crate::api::project::update_project,
         crate::api::project::list_user_projects,
@@ -109,11 +114,6 @@ async fn main() -> anyhow::Result<()> {
         crate::api::event::report_batch_events,
         crate::api::event::get_project_events,
         crate::api::event::list_project_events,
-
-        crate::api::auth::register,
-        crate::api::auth::login,
-        crate::api::auth::refresh_token,
-        crate::api::auth::get_me,
     ),
 )]
 struct ApiDoc;
