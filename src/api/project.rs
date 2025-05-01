@@ -11,10 +11,11 @@ use crate::model::project::{ProjectCreateRequest, ProjectDetailResponse, Project
 #[utoipa::path(
     post,
     path = "/projects",
+    summary = "프로젝트 생성",
     request_body = ProjectCreateRequest,
-    security(
-        ("BearerAuth" = [])
-    )
+    responses(
+        (status = 201, description = "프로젝트 생성 성공", body = ProjectResponse),
+    ),
 )]
 #[post("/projects")]
 pub async fn create_project(
@@ -48,6 +49,15 @@ pub async fn create_project(
     Ok(HttpResponse::Created().json(ProjectResponse::from(inserted_project)))
 }
 
+
+#[utoipa::path(
+    get,
+    path = "/projects",
+    summary = "프로젝트 목록 조회",
+    responses(
+        (status = 200, description = "프로젝트 목록 조회 성공", body = Vec<ProjectResponse>),
+    ),
+)]
 #[get("/projects")]
 pub async fn list_user_projects(
     db: web::Data<DatabaseConnection>,
@@ -71,6 +81,18 @@ pub async fn list_user_projects(
     Ok(HttpResponse::Ok().json(response))
 }
 
+
+#[utoipa::path(
+    get,
+    path = "/projects/{id}",
+    summary = "프로젝트 상세 정보 조회",
+    params(
+        ("id", description = "프로젝트 ID", example = 1),
+    ),
+    responses(
+        (status = 200, description = "프로젝트 상세 조회 성공", body = ProjectDetailResponse),
+    ),
+)]
 #[get("/projects/{id}")]
 pub async fn get_project(
     db: web::Data<DatabaseConnection>,
@@ -115,6 +137,15 @@ pub async fn get_project(
     }))
 }
 
+#[utoipa::path(
+    put,
+    path = "/projects/{id}",
+    summary = "프로젝트 업데이트",
+    request_body = ProjectUpdateRequest,
+    responses(
+        (status = 200, description = "프로젝트 수정 성공", body = ProjectResponse),
+    ),
+)]
 #[put("/projects/{id}")]
 pub async fn update_project(
     path: web::Path<i32>,
@@ -147,6 +178,14 @@ pub async fn update_project(
     Ok(HttpResponse::Ok().json(ProjectResponse::from(updated_project)))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/projects/{id}",
+    summary = "프로젝트 삭제",
+    responses(
+        (status = 204, description = "프로젝트 삭제 성공"),
+    ),
+)]
 #[delete("/projects/{id}")]
 pub async fn delete_project(
     db: web::Data<DatabaseConnection>,
@@ -168,6 +207,7 @@ pub async fn delete_project(
 // TODO 5. 프로젝트 삭제
 // TODO  6. 프로젝트에 유저 초대
 // TODO 7. 프로젝트에서 멤버 제거
+
 
 pub async fn check_project_member(
     db: &DatabaseConnection,

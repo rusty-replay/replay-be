@@ -100,9 +100,10 @@ async fn main() -> anyhow::Result<()> {
 #[openapi(
     paths(
         crate::api::event::health_check,
+        crate::api::project::create_project,
+        crate::api::project::update_project,
+        crate::api::project::list_user_projects,
+        crate::api::project::get_project,
     ),
-    tags(
-        (name = "Health Check", description = "Health Check API"),
-    )
 )]
 struct ApiDoc;

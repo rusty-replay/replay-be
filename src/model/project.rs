@@ -22,7 +22,7 @@ pub struct ProjectInviteRequest {
     pub role: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectResponse {
     pub id: i32,
@@ -47,7 +47,7 @@ impl From<ProjectModel> for ProjectResponse {
 }
 
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ProjectMemberResponse {
     pub user_id: i32,
     pub username: String,
@@ -56,7 +56,7 @@ pub struct ProjectMemberResponse {
     pub joined_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ProjectDetailResponse {
     pub project: ProjectResponse,
     pub members: Vec<ProjectMemberResponse>,
