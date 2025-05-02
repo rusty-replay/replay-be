@@ -55,6 +55,7 @@ pub struct EventReportListResponse {
     pub issue_id: Option<i32>,
     pub browser: Option<String>,
     pub os: Option<String>,
+    pub has_replay: bool,
 }
 
 impl From<EventModel> for EventReportListResponse {
@@ -69,6 +70,7 @@ impl From<EventModel> for EventReportListResponse {
             issue_id: model.issue_id,
             browser: model.browser,
             os: model.os,
+            has_replay: model.replay.is_some(),
         }
     }
 }

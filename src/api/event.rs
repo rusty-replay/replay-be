@@ -202,7 +202,6 @@ pub async fn report_event(
         (status = 200, description = "이벤트 목록 조회 성공", body = Vec<EventReportListResponse>),
     ),
 )]
-
 #[get("/projects/{project_id}/events")]
 pub async fn list_project_events(
     db: web::Data<DatabaseConnection>,
