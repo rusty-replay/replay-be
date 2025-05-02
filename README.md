@@ -1,3 +1,9 @@
+## 🦀 Backend (Rust + Actix-Web)
+
+# Server
+
+## Get started
+
 ### 🔧 Environment Variables
 
 `.env` 파일을 프로젝트 루트에 생성하고 아래 내용을 추가해주세요:
@@ -9,3 +15,13 @@ DATABASE_URL=mysql://<user>:<password>@<host>:<port>/<database>
 # JWT 서명에 사용할 시크릿 키
 JWT_SECRET=your_jwt_secret
 ```
+
+### Run server
+
+```bash
+cargo run
+```
+
+### See Swagger UI
+http://localhost:8081/swagger-ui/
+
