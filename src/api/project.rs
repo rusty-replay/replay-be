@@ -171,6 +171,10 @@ pub async fn update_project(
         .await?
         .ok_or_else(|| AppError::not_found(ErrorCode::ProjectNotFound))?;
 
+    if project.deleted_at.is_some() {
+        return Err(AppError::not_found(ErrorCode::ProjectNotFound));
+    }
+
     let mut project_model: ProjectActiveModel = project.into();
 
     if let Some(name) = &body.name {
