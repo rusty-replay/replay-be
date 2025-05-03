@@ -31,7 +31,7 @@ pub async fn create_project(
         api_key: Set(api_key),
         description: Set(body.description.clone()),
         created_at: Set(now.into()),
-        updated_at: Set(now.into()),
+        updated_at: Set(None),
         ..Default::default()
     };
 
@@ -73,7 +73,14 @@ pub async fn list_user_projects(
 
     let response: Vec<ProjectResponse> = projects
         .into_iter()
-        .filter_map(|(_, projects)| projects.first().cloned().map(ProjectResponse::from))
+        .filter_map(|(_, projects)| {
+            projects
+                .iter()
+                .find(|p| p.deleted_at.is_none())
+                .cloned()
+                .map(ProjectResponse::from)
+            // projects.first().cloned().map(ProjectResponse::from)
+        })
         .collect();
 
     println!("projects list: {:?}", response);
@@ -112,6 +119,7 @@ pub async fn get_project(
     let project = ProjectEntity::find_by_id(project_id)
         .one(db.get_ref())
         .await?
+        .filter(|p| p.deleted_at.is_none())
         .ok_or_else(|| AppError::not_found(ErrorCode::ProjectNotFound))?;
 
     let members = ProjectMemberEntity::find()
@@ -171,7 +179,7 @@ pub async fn update_project(
     if let Some(description) = &body.description {
         project_model.description = Set(Some(description.clone()));
     }
-    project_model.updated_at = Set(Utc::now());
+    project_model.updated_at = Set(Some(Utc::now()));
 
     let updated_project = project_model.update(db.get_ref()).await?;
 
@@ -180,7 +188,7 @@ pub async fn update_project(
 
 #[utoipa::path(
     delete,
-    path = "/projects/{id}",
+    path = "/api/projects/{id}",
     summary = "프로젝트 삭제",
     responses(
         (status = 204, description = "프로젝트 삭제 성공"),
@@ -197,9 +205,14 @@ pub async fn delete_project(
 
     check_project_owner(db.get_ref(), project_id, user_id).await?;
 
-    ProjectEntity::delete_by_id(project_id)
-        .exec(db.get_ref())
-        .await?;
+    let project = ProjectEntity::find_by_id(project_id)
+        .one(db.get_ref())
+        .await?
+        .ok_or_else(|| AppError::not_found(ErrorCode::ProjectNotFound))?;
+
+    let mut project_model: ProjectActiveModel = project.into();
+    project_model.soft_delete(user_id.into());
+    project_model.update(db.get_ref()).await?;
 
     Ok(HttpResponse::NoContent().finish())
 }

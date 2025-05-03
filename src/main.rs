@@ -83,6 +83,7 @@ async fn main() -> anyhow::Result<()> {
                     .service(api::update_project)
                     .service(api::list_user_projects)
                     .service(api::get_project)
+                    .service(api::delete_project)
 
                     .service(api::get_project_events)
                     .service(api::list_project_events)
@@ -109,6 +110,7 @@ async fn main() -> anyhow::Result<()> {
         crate::api::project::update_project,
         crate::api::project::list_user_projects,
         crate::api::project::get_project,
+        crate::api::project::delete_project,
 
         crate::api::event::report_event,
         crate::api::event::report_batch_events,

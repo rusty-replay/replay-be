@@ -30,7 +30,7 @@ pub struct ProjectResponse {
     pub api_key: String,
     pub description: Option<String>,
     pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: Option<DateTime<Utc>>,
 }
 
 impl From<ProjectModel> for ProjectResponse {
