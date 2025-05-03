@@ -1,8 +1,10 @@
-use chrono::{DateTime, Utc};
+use chrono::{Utc, DateTime};
 use sea_orm::entity::prelude::*;
 use sea_orm::Set;
 use serde::{Deserialize, Serialize};
+
 use crate::model::project::ProjectCreateRequest;
+use crate::entity::base_time::{BaseTimeFields, ActiveModelTimeBehavior};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "projects")]
@@ -31,7 +33,7 @@ impl Related<super::event::Entity> for Entity {
     }
 }
 
-impl super::base_time::BaseTimeFields for Model {
+impl BaseTimeFields for Model {
     fn created_at(&self) -> &DateTime<Utc> {
         &self.created_at
     }
@@ -48,15 +50,28 @@ impl super::base_time::BaseTimeFields for Model {
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for ActiveModel {
-    async fn before_save<C: ConnectionTrait>(mut self, db: &C, insert: bool) -> Result<Self, DbErr> {
-        let now = Utc::now();
+    async fn before_save<C: ConnectionTrait>(self, db: &C, insert: bool) -> Result<Self, DbErr> {
+        self.before_save_common(db, insert).await
+    }
+}
 
-        if insert {
-            self.created_at = Set(now);
-        } else {
-            self.updated_at = Set(Some(now))
-        }
-        Ok(self)
+impl ActiveModelTimeBehavior for ActiveModel {
+    fn set_created_at(&mut self, dt: DateTime<Utc>) {
+        self.created_at = Set(dt);
+    }
+
+    fn set_updated_at(&mut self, dt: DateTime<Utc>) {
+        self.updated_at = Set(Some(dt));
+    }
+
+    fn set_deleted(&mut self, by: i64, dt: DateTime<Utc>) {
+        self.deleted_at = Set(Some(dt));
+        self.deleted_by = Set(Some(by));
+    }
+
+    fn clear_deleted(&mut self) {
+        self.deleted_at = Set(None);
+        self.deleted_by = Set(None);
     }
 }
 
@@ -71,12 +86,10 @@ impl ActiveModel {
 
     pub fn soft_delete(&mut self, deleted_by: i64) {
         let now = Utc::now();
-        self.deleted_at = Set(Some(now));
-        self.deleted_by = Set(Some(deleted_by));
+        self.set_deleted(deleted_by, now);
     }
 
     pub fn restore(&mut self) {
-        self.deleted_at = Set(None);
-        self.deleted_by = Set(None);
+        self.clear_deleted();
     }
 }

@@ -1,9 +1,11 @@
 use chrono::{Utc, DateTime};
 use sea_orm::entity::prelude::*;
-use serde_json::Value;
 use sea_orm::Set;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
 use crate::model::event::EventReportRequest;
+use crate::entity::base_time::{BaseTimeFields, ActiveModelTimeBehavior};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "event")]
@@ -16,13 +18,13 @@ pub struct Model {
     pub timestamp: DateTime<Utc>,
     pub group_hash: String,
     pub replay: Option<Value>,
-    pub environment: String,  // "development", "staging", "production"
+    pub environment: String,
     pub browser: Option<String>,
     pub os: Option<String>,
     pub ip_address: Option<String>,
     pub user_agent: Option<String>,
     pub project_id: i32,
-    pub issue_id: Option<i32>,  // 이슈와 연결
+    pub issue_id: Option<i32>,
     pub reported_by: Option<i32>,
     pub additional_info: Option<Value>,
 
@@ -74,7 +76,7 @@ impl Related<super::user::Entity> for Entity {
     }
 }
 
-impl super::base_time::BaseTimeFields for Model {
+impl BaseTimeFields for Model {
     fn created_at(&self) -> &DateTime<Utc> {
         &self.created_at
     }
@@ -91,17 +93,30 @@ impl super::base_time::BaseTimeFields for Model {
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for ActiveModel {
-    async fn before_save<C: ConnectionTrait>(mut self, _db: &C, insert: bool) -> Result<Self, DbErr> {
-        let now = Utc::now();
-        if insert {
-            self.created_at = Set(now);
-        } else {
-            self.updated_at = Set(Some(now));
-        }
-        Ok(self)
+    async fn before_save<C: ConnectionTrait>(self, db: &C, insert: bool) -> Result<Self, DbErr> {
+        self.before_save_common(db, insert).await
     }
 }
 
+impl ActiveModelTimeBehavior for ActiveModel {
+    fn set_created_at(&mut self, dt: DateTime<Utc>) {
+        self.created_at = Set(dt);
+    }
+
+    fn set_updated_at(&mut self, dt: DateTime<Utc>) {
+        self.updated_at = Set(Some(dt));
+    }
+
+    fn set_deleted(&mut self, by: i64, dt: DateTime<Utc>) {
+        self.deleted_at = Set(Some(dt));
+        self.deleted_by = Set(Some(by));
+    }
+
+    fn clear_deleted(&mut self) {
+        self.deleted_at = Set(None);
+        self.deleted_by = Set(None);
+    }
+}
 
 impl ActiveModel {
     pub fn from_error_event(
@@ -110,17 +125,16 @@ impl ActiveModel {
         issue_id: i32,
         group_hash: String,
     ) -> Self {
-        let now = Utc::now();
         let timestamp = event.timestamp;
 
         Self {
             message: Set(event.message.clone()),
             stacktrace: Set(event.stacktrace.clone()),
             app_version: Set(event.app_version.clone()),
-            timestamp: Set(timestamp.into()),
+            timestamp: Set(timestamp),
             group_hash: Set(group_hash),
             replay: Set(event.replay.clone()),
-            environment: Set(event.environment.clone().unwrap_or("production".to_string())),
+            environment: Set(event.environment.clone().unwrap_or_else(|| "production".to_string())),
             browser: Set(event.browser.clone()),
             os: Set(event.os.clone()),
             ip_address: Set(None),
@@ -129,20 +143,16 @@ impl ActiveModel {
             issue_id: Set(Some(issue_id)),
             reported_by: Set(event.user_id),
             additional_info: Set(event.additional_info.clone()),
-            created_at: Set(now.into()),
-            updated_at: Set(None),
             ..Default::default()
         }
     }
 
     pub fn soft_delete(&mut self, deleted_by: i64) {
         let now = Utc::now();
-        self.deleted_at = Set(Some(now));
-        self.deleted_by = Set(Some(deleted_by));
+        self.set_deleted(deleted_by, now);
     }
 
     pub fn restore(&mut self) {
-        self.deleted_at = Set(None);
-        self.deleted_by = Set(None);
+        self.clear_deleted();
     }
 }
