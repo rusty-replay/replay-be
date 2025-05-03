@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
-use crate::entity::event::Model as EventModel;
+use crate::entity::event::{Model as EventModel, Priority};
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -140,4 +140,10 @@ pub struct PaginatedResponse<T> {
     pub filtered_elements: u64,
     pub total_pages: u32,
     pub has_next: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EventPriority {
+    pub priority: Priority,
 }

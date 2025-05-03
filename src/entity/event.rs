@@ -7,6 +7,7 @@ use serde_json::Value;
 use crate::model::event::EventReportRequest;
 use crate::entity::base_time::{BaseTimeFields, ActiveModelTimeBehavior};
 use sea_orm::entity::prelude::*;
+use utoipa::ToSchema;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "event")]
@@ -37,7 +38,7 @@ pub struct Model {
     pub deleted_by: Option<i64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, EnumIter, DeriveActiveEnum)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, EnumIter, DeriveActiveEnum, Copy, ToSchema)]
 #[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "priority")]
 pub enum Priority {
     #[sea_orm(string_value = "HIGH")]

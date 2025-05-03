@@ -1,12 +1,12 @@
 use std::env;
-use actix_web::{get, post, web, HttpResponse};
+use actix_web::{get, post, put, web, HttpResponse};
 use chrono::Utc;
 use sea_orm::{EntityTrait, Set, ActiveModelTrait, QueryOrder, DatabaseConnection, QueryFilter, Condition, ColumnTrait, PaginatorTrait, DbErr, QuerySelect, QueryTrait};
 use crate::entity::event::{self, ActiveModel as EventActiveModel, Entity as EventEntity};
 use crate::entity::issue::{ActiveModel as IssueActiveModel, Entity as IssueEntity};
 use crate::entity::project::{Entity as ProjectEntity};
 use crate::entity::project_member::{self, Entity as ProjectMemberEntity};
-use crate::model::event::{BatchEventReportRequest, BatchEventReportResponse, EventQuery, EventReportListResponse, EventReportRequest, EventReportResponse, PaginatedResponse};
+use crate::model::event::{BatchEventReportRequest, BatchEventReportResponse, EventPriority, EventQuery, EventReportListResponse, EventReportRequest, EventReportResponse, PaginatedResponse};
 use sha2::{Sha256, Digest};
 use crate::util::slack::send_slack_alert;
 use crate::entity::{issue, project};
@@ -285,7 +285,7 @@ pub async fn get_project_events(
     path: web::Path<(i32, i32)>,
     auth_user: web::ReqData<i32>,
 ) -> Result<HttpResponse, AppError> {
-    let (project_id, error_id) = path.into_inner();
+    let (project_id, event_id) = path.into_inner();
     let user_id = auth_user.into_inner();
 
     let is_member = ProjectMemberEntity::find()
@@ -304,7 +304,7 @@ pub async fn get_project_events(
     let log = EventEntity::find()
         .filter(
             Condition::all()
-                .add(event::Column::Id.eq(error_id))
+                .add(event::Column::Id.eq(event_id))
                 .add(event::Column::ProjectId.eq(project_id))
         )
         .one(db.get_ref())
@@ -315,6 +315,37 @@ pub async fn get_project_events(
     Ok(HttpResponse::Ok().json(EventReportResponse::from(log)))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/projects/{project_id}/events/{id}/priority",
+    summary = "이벤트 우선순위 설정",
+    request_body = EventPriority,
+    responses(
+        (status = 200, description = "이벤트 우선순위 설정 성공", body = EventReportResponse),
+    ),
+)]
+#[put("/projects/{project_id}/events/{id}/priority")]
+pub async fn set_priority(
+    db: web::Data<DatabaseConnection>,
+    path: web::Path<(i32, i32)>,
+    auth_user: web::ReqData<i32>,
+    body: web::Json<EventPriority>,
+) -> Result<HttpResponse, AppError> {
+    let (project_id, event_id) = path.into_inner();
+    let user_id = auth_user.into_inner();
+    let priority = &body.priority;
+
+    check_project_member(db.get_ref(), project_id, user_id).await?;
+
+    let event = find_event(db.get_ref(), project_id, event_id).await?;
+    let mut active_model: EventActiveModel = event.into();
+    active_model.priority = Set(Some(*priority));
+    active_model.updated_at = Set(Some(Utc::now()));
+
+    let updated = active_model.update(db.get_ref()).await?;
+
+    Ok(HttpResponse::Ok().json(EventReportResponse::from(updated)))
+}
 
 static SLACK_WEBHOOK_URL: LazyLock<String> = LazyLock::new(|| {
     env::var("SLACK_WEBHOOK_URL").expect("SLACK_WEBHOOK_URL 환경 변수가 설정되어야 합니다.")
@@ -349,4 +380,22 @@ fn calculate_group_hash(message: &str, stack: &str) -> String {
     hasher.update(important_stack);
     let result = hasher.finalize();
     format!("{:x}", result)
+}
+
+pub async fn find_event(
+    db: &DatabaseConnection,
+    project_id: i32,
+    event_id: i32,
+) -> Result<crate::entity::event::Model, AppError> {
+    let event = EventEntity::find()
+        .filter(
+            Condition::all()
+                .add(event::Column::Id.eq(event_id))
+                .add(event::Column::ProjectId.eq(project_id))
+        )
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::not_found(ErrorCode::ErrorLogNotFound))?;
+
+    Ok(event)
 }
