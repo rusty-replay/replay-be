@@ -109,18 +109,8 @@ pub async fn get_project(
     let project_id = path.into_inner();
     let user_id = *auth_user;
 
-    ProjectEntity::find_by_id(project_id)
-        .one(db.get_ref())
-        .await?
-        .ok_or_else(|| AppError::not_found(ErrorCode::ProjectNotFound))?;
-
+    let project = check_active_project(db.get_ref(), project_id).await?;
     check_project_member(db.get_ref(), project_id, user_id).await?;
-
-    let project = ProjectEntity::find_by_id(project_id)
-        .one(db.get_ref())
-        .await?
-        .filter(|p| p.deleted_at.is_none())
-        .ok_or_else(|| AppError::not_found(ErrorCode::ProjectNotFound))?;
 
     let members = ProjectMemberEntity::find()
         .filter(project_member::Column::ProjectId.eq(project_id))
@@ -165,16 +155,7 @@ pub async fn update_project(
     let user_id = *auth_user;
 
     check_project_member(db.get_ref(), project_id, user_id).await?;
-
-    let project = ProjectEntity::find_by_id(project_id)
-        .one(db.get_ref())
-        .await?
-        .ok_or_else(|| AppError::not_found(ErrorCode::ProjectNotFound))?;
-
-    if project.deleted_at.is_some() {
-        return Err(AppError::not_found(ErrorCode::ProjectNotFound));
-    }
-
+    let project = check_active_project(db.get_ref(), project_id).await?;
     let mut project_model: ProjectActiveModel = project.into();
 
     if let Some(name) = &body.name {
@@ -208,9 +189,21 @@ pub async fn delete_project(
     let user_id = *auth_user;
 
     check_project_owner(db.get_ref(), project_id, user_id).await?;
+    let project = check_active_project(db.get_ref(), project_id).await?;
+    let mut project_model: ProjectActiveModel = project.into();
 
+    project_model.soft_delete(user_id.into());
+    project_model.update(db.get_ref()).await?;
+
+    Ok(HttpResponse::NoContent().finish())
+}
+
+pub async fn check_active_project(
+    db: &DatabaseConnection,
+    project_id: i32,
+) -> Result<crate::entity::project::Model, AppError> {
     let project = ProjectEntity::find_by_id(project_id)
-        .one(db.get_ref())
+        .one(db)
         .await?
         .ok_or_else(|| AppError::not_found(ErrorCode::ProjectNotFound))?;
 
@@ -218,17 +211,12 @@ pub async fn delete_project(
         return Err(AppError::not_found(ErrorCode::ProjectNotFound));
     }
 
-    let mut project_model: ProjectActiveModel = project.into();
-    project_model.soft_delete(user_id.into());
-    project_model.update(db.get_ref()).await?;
-
-    Ok(HttpResponse::NoContent().finish())
+    Ok(project)
 }
 
-// TODO 5. 프로젝트 삭제
+
 // TODO  6. 프로젝트에 유저 초대
 // TODO 7. 프로젝트에서 멤버 제거
-
 
 pub async fn check_project_member(
     db: &DatabaseConnection,
