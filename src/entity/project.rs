@@ -56,7 +56,6 @@ impl ActiveModelBehavior for ActiveModel {
         } else {
             self.updated_at = Set(Some(now))
         }
-
         Ok(self)
     }
 }

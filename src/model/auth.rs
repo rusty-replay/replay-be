@@ -48,4 +48,5 @@ pub struct UserResponse {
     pub email: String,
     pub role: String,
     pub created_at: DateTime<Utc>,
+    pub updated_at: Option<DateTime<Utc>>,
 }

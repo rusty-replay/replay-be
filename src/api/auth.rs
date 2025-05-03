@@ -186,6 +186,7 @@ pub async fn get_me(
         email: user.email,
         role: user.role,
         created_at: user.created_at.into(),
+        updated_at: user.updated_at.into(),
     }))
 }
 

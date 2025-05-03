@@ -40,7 +40,7 @@ pub struct EventReportResponse {
     pub issue_id: Option<i32>,
     pub additional_info: Option<Value>,
     pub created_at: String,
-    pub updated_at: String,
+    pub updated_at: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -100,7 +100,7 @@ impl From<EventModel> for EventReportResponse {
             issue_id: model.issue_id,
             additional_info: model.additional_info,
             created_at: model.created_at.to_string(),
-            updated_at: model.updated_at.to_string(),
+            updated_at: model.updated_at.map(|dt| dt.to_string()),
         }
     }
 }

@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use sea_orm::entity::prelude::*;
 
 pub trait BaseTimeFields {
     fn created_at(&self) -> &DateTime<Utc>;

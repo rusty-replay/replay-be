@@ -25,8 +25,11 @@ pub struct Model {
     pub issue_id: Option<i32>,  // 이슈와 연결
     pub reported_by: Option<i32>,
     pub additional_info: Option<Value>,
+
     pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub deleted_at: Option<DateTime<Utc>>,
+    pub deleted_by: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -71,7 +74,34 @@ impl Related<super::user::Entity> for Entity {
     }
 }
 
-impl ActiveModelBehavior for ActiveModel {}
+impl super::base_time::BaseTimeFields for Model {
+    fn created_at(&self) -> &DateTime<Utc> {
+        &self.created_at
+    }
+    fn updated_at(&self) -> &Option<DateTime<Utc>> {
+        &self.updated_at
+    }
+    fn deleted_at(&self) -> &Option<DateTime<Utc>> {
+        &self.deleted_at
+    }
+    fn deleted_by(&self) -> &Option<i64> {
+        &self.deleted_by
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for ActiveModel {
+    async fn before_save<C: ConnectionTrait>(mut self, _db: &C, insert: bool) -> Result<Self, DbErr> {
+        let now = Utc::now();
+        if insert {
+            self.created_at = Set(now);
+        } else {
+            self.updated_at = Set(Some(now));
+        }
+        Ok(self)
+    }
+}
+
 
 impl ActiveModel {
     pub fn from_error_event(
@@ -100,8 +130,19 @@ impl ActiveModel {
             reported_by: Set(event.user_id),
             additional_info: Set(event.additional_info.clone()),
             created_at: Set(now.into()),
-            updated_at: Set(now.into()),
+            updated_at: Set(None),
             ..Default::default()
         }
+    }
+
+    pub fn soft_delete(&mut self, deleted_by: i64) {
+        let now = Utc::now();
+        self.deleted_at = Set(Some(now));
+        self.deleted_by = Set(Some(deleted_by));
+    }
+
+    pub fn restore(&mut self) {
+        self.deleted_at = Set(None);
+        self.deleted_by = Set(None);
     }
 }
