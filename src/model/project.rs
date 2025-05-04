@@ -48,6 +48,7 @@ impl From<ProjectModel> for ProjectResponse {
 
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ProjectMemberResponse {
     pub user_id: i32,
     pub username: String,
@@ -57,6 +58,7 @@ pub struct ProjectMemberResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ProjectDetailResponse {
     pub project: ProjectResponse,
     pub members: Vec<ProjectMemberResponse>,

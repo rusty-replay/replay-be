@@ -41,6 +41,9 @@ pub struct EventReportResponse {
     pub additional_info: Option<Value>,
     pub created_at: String,
     pub updated_at: Option<String>,
+
+    pub priority: Option<Priority>,
+    pub assigned_to: Option<i32>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -56,6 +59,8 @@ pub struct EventReportListResponse {
     pub browser: Option<String>,
     pub os: Option<String>,
     pub has_replay: bool,
+    pub priority: Option<Priority>,
+    pub assigned_to: Option<i32>,
 }
 
 impl From<EventModel> for EventReportListResponse {
@@ -71,6 +76,8 @@ impl From<EventModel> for EventReportListResponse {
             browser: model.browser,
             os: model.os,
             has_replay: model.replay.is_some(),
+            priority: model.priority,
+            assigned_to: model.assigned_to,
         }
     }
 }
@@ -101,6 +108,8 @@ impl From<EventModel> for EventReportResponse {
             additional_info: model.additional_info,
             created_at: model.created_at.to_string(),
             updated_at: model.updated_at.map(|dt| dt.to_string()),
+            priority: model.priority,
+            assigned_to: model.assigned_to,
         }
     }
 }
@@ -146,4 +155,10 @@ pub struct PaginatedResponse<T> {
 #[serde(rename_all = "camelCase")]
 pub struct EventPriority {
     pub priority: Priority,
+}
+
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EventAssignee {
+    pub assigned_to: Option<i32>,
 }

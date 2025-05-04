@@ -6,7 +6,7 @@ use crate::entity::event::{self, ActiveModel as EventActiveModel, Entity as Even
 use crate::entity::issue::{ActiveModel as IssueActiveModel, Entity as IssueEntity};
 use crate::entity::project::{Entity as ProjectEntity};
 use crate::entity::project_member::{self, Entity as ProjectMemberEntity};
-use crate::model::event::{BatchEventReportRequest, BatchEventReportResponse, EventPriority, EventQuery, EventReportListResponse, EventReportRequest, EventReportResponse, PaginatedResponse};
+use crate::model::event::{BatchEventReportRequest, BatchEventReportResponse, EventAssignee, EventPriority, EventQuery, EventReportListResponse, EventReportRequest, EventReportResponse, PaginatedResponse};
 use sha2::{Sha256, Digest};
 use crate::util::slack::send_slack_alert;
 use crate::entity::{issue, project};
@@ -321,7 +321,7 @@ pub async fn get_project_events(
     summary = "이벤트 우선순위 설정",
     request_body = EventPriority,
     responses(
-        (status = 200, description = "이벤트 우선순위 설정 성공", body = EventReportResponse),
+        (status = 200, description = "이벤트 우선순위 설정 성공", body = EventReportListResponse),
     ),
 )]
 #[put("/projects/{project_id}/events/{id}/priority")]
@@ -344,7 +344,56 @@ pub async fn set_priority(
 
     let updated = active_model.update(db.get_ref()).await?;
 
-    Ok(HttpResponse::Ok().json(EventReportResponse::from(updated)))
+    Ok(HttpResponse::Ok().json(EventReportListResponse::from(updated)))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/projects/{project_id}/events/{id}/assignee",
+    summary = "이벤트 담당자 설정",
+    request_body = EventAssignee,
+    responses(
+        (status = 200, description = "담당자 설정 성공", body = EventReportListResponse),
+        (status = 400, description = "잘못된 사용자"),
+        (status = 403, description = "접근 권한 없음"),
+        (status = 404, description = "이벤트 또는 프로젝트 없음"),
+    ),
+)]
+#[put("/projects/{project_id}/events/{id}/assignee")]
+pub async fn set_assignee(
+    db: web::Data<DatabaseConnection>,
+    path: web::Path<(i32, i32)>,
+    auth_user: web::ReqData<i32>,
+    body: web::Json<EventAssignee>,
+) -> Result<HttpResponse, AppError> {
+    let (project_id, event_id) = path.into_inner();
+    let user_id = auth_user.into_inner();
+    let assigned_to = body.assigned_to;
+
+    check_project_member(db.get_ref(), project_id, user_id).await?;
+
+    if let Some(target_user_id) = assigned_to {
+        let is_member = ProjectMemberEntity::find()
+            .filter(
+                project_member::Column::ProjectId.eq(project_id)
+                    .and(project_member::Column::UserId.eq(target_user_id))
+            )
+            .one(db.get_ref())
+            .await?;
+
+        if is_member.is_none() {
+            return Err(AppError::bad_request(ErrorCode::InvalidAssignee));
+        }
+    }
+
+    let event = find_event(db.get_ref(), project_id, event_id).await?;
+    let mut active_model: EventActiveModel = event.into();
+    active_model.assigned_to = Set(assigned_to);
+    active_model.updated_at = Set(Some(Utc::now()));
+
+    let updated = active_model.update(db.get_ref()).await?;
+
+    Ok(HttpResponse::Ok().json(EventReportListResponse::from(updated)))
 }
 
 static SLACK_WEBHOOK_URL: LazyLock<String> = LazyLock::new(|| {

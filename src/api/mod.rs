@@ -4,5 +4,5 @@ pub mod project;
 pub mod health_check;
 
 pub use crate::api::auth::{register, login, refresh_token, get_me};
-pub use crate::api::event::{get_project_events, list_project_events, report_event, report_batch_events, set_priority};
-pub use crate::api::project::{create_project, update_project, list_user_projects, get_project, delete_project};
+pub use crate::api::event::{get_project_events, list_project_events, report_event, report_batch_events, set_priority, set_assignee};
+pub use crate::api::project::{create_project, update_project, list_user_projects, get_project, delete_project, get_project_users};

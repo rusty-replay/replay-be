@@ -31,6 +31,7 @@ pub struct Model {
     pub additional_info: Option<Value>,
 
     pub priority: Option<Priority>,
+    pub assigned_to: Option<i32>,
 
     pub created_at: DateTime<Utc>,
     pub updated_at: Option<DateTime<Utc>>,

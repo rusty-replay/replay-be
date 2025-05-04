@@ -198,6 +198,52 @@ pub async fn delete_project(
     Ok(HttpResponse::NoContent().finish())
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/projects/{id}/users",
+    summary = "프로젝트 멤버 조회",
+    params(
+        ("id", description = "프로젝트 ID", example = 1),
+    ),
+    responses(
+        (status = 200, description = "프로젝트 멤버 조회 성공", body = [ProjectMemberResponse]),
+    ),
+)]
+#[get("/projects/{id}/users")]
+pub async fn get_project_users(
+    db: web::Data<DatabaseConnection>,
+    path: web::Path<i32>,
+    auth_user: web::ReqData<i32>,
+) -> Result<HttpResponse, AppError> {
+    let project_id = path.into_inner();
+    let user_id = *auth_user;
+
+    // 권한 검사
+    check_project_member(db.get_ref(), project_id, user_id).await?;
+    check_active_project(db.get_ref(), project_id).await?;
+
+    let members = ProjectMemberEntity::find()
+        .filter(project_member::Column::ProjectId.eq(project_id))
+        .find_with_related(user::Entity)
+        .all(db.get_ref())
+        .await?;
+
+    let member_responses: Vec<ProjectMemberResponse> = members
+        .into_iter()
+        .filter_map(|(member, users)| {
+            users.first().map(|u| ProjectMemberResponse {
+                user_id: u.id,
+                username: u.username.clone(),
+                email: u.email.clone(),
+                role: member.role.clone(),
+                joined_at: member.joined_at.into(),
+            })
+        })
+        .collect();
+
+    Ok(HttpResponse::Ok().json(member_responses))
+}
+
 pub async fn check_active_project(
     db: &DatabaseConnection,
     project_id: i32,
@@ -238,6 +284,28 @@ pub async fn check_project_member(
 
     Ok(())
 }
+
+// pub async fn check_assigned_project_member(
+//     db: &DatabaseConnection,
+//     project_id: i32,
+//     user_id: i32,
+// ) -> Result<i32, AppError> {
+//     let is_assigned = ProjectMemberEntity::find()
+//         .filter(
+//             Condition::all()
+//                 .add(project_member::Column::ProjectId.eq(project_id))
+//                 .add(project_member::Column::UserId.eq(user_id))
+//                 .add(project_member::Column::Role.ne("viewer"))
+//         )
+//         .one(db)
+//         .await?;
+//
+//     if is_assigned.is_none() {
+//         return Err(AppError::forbidden(ErrorCode::NotEnoughPermission));
+//     }
+//
+//
+// }
 
 pub async fn check_project_owner(
     db: &DatabaseConnection,
