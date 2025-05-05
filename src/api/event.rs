@@ -364,52 +364,64 @@ pub async fn set_priority(
 
 #[utoipa::path(
     put,
-    path = "/api/projects/{project_id}/events/{id}/assignee",
-    summary = "이벤트 담당자 설정",
+    path = "/projects/{project_id}/events/assignee",
+    summary = "이벤트 담당자 일괄 설정",
     request_body = EventAssignee,
     responses(
-        (status = 200, description = "담당자 설정 성공", body = EventReportListResponse),
-        (status = 400, description = "잘못된 사용자"),
-        (status = 403, description = "접근 권한 없음"),
-        (status = 404, description = "이벤트 또는 프로젝트 없음"),
+        (status = 200, description = "담당자 일괄 설정 성공", body = [EventReportListResponse]),
+        (status = 400, description = "잘못된 요청"),
+        (status = 403, description = "권한 없음"),
     ),
 )]
-#[put("/projects/{project_id}/events/{id}/assignee")]
+#[put("/projects/{project_id}/events/assignee")]
 pub async fn set_assignee(
     db: web::Data<DatabaseConnection>,
-    path: web::Path<(i32, i32)>,
+    path: web::Path<i32>,
     auth_user: web::ReqData<i32>,
     body: web::Json<EventAssignee>,
 ) -> Result<HttpResponse, AppError> {
-    let (project_id, event_id) = path.into_inner();
+    let project_id = path.into_inner();
     let user_id = auth_user.into_inner();
-    let assigned_to = body.assigned_to;
+    let EventAssignee { event_ids, assigned_to } = body.into_inner();
 
     check_project_member(db.get_ref(), project_id, user_id).await?;
 
-    if let Some(target_user_id) = assigned_to {
+    if let Some(uid) = assigned_to {
         let is_member = ProjectMemberEntity::find()
             .filter(
                 project_member::Column::ProjectId.eq(project_id)
-                    .and(project_member::Column::UserId.eq(target_user_id))
+                    .and(project_member::Column::UserId.eq(uid)),
             )
             .one(db.get_ref())
             .await?;
-
         if is_member.is_none() {
             return Err(AppError::bad_request(ErrorCode::InvalidAssignee));
         }
     }
 
-    let event = find_event(db.get_ref(), project_id, event_id).await?;
-    let mut active_model: EventActiveModel = event.into();
-    active_model.assigned_to = Set(assigned_to);
-    active_model.updated_at = Set(Some(Utc::now()));
+    check_event_in_project(db.get_ref(), project_id, &event_ids).await?;
 
-    let updated = active_model.update(db.get_ref()).await?;
+    EventEntity::update_many()
+        .col_expr(
+            EventColumn::AssignedTo,
+            Expr::value(assigned_to),
+        )
+        .filter(EventColumn::Id.is_in(event_ids.clone()))
+        .exec(db.get_ref())
+        .await?;
 
-    Ok(HttpResponse::Ok().json(EventReportListResponse::from(updated)))
+    let updated = EventEntity::find()
+        .filter(EventColumn::ProjectId.eq(project_id))
+        .filter(EventColumn::Id.is_in(event_ids))
+        .all(db.get_ref())
+        .await?;
+
+    let responses: Vec<EventReportListResponse> =
+        updated.into_iter().map(EventReportListResponse::from).collect();
+
+    Ok(HttpResponse::Ok().json(responses))
 }
+
 
 #[utoipa::path(
     put,
