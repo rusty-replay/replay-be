@@ -8,6 +8,7 @@ use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {
+    InvalidEvent,
     InvalidAssignee,
     ValidationError,
     DuplicateAccountEmail,
@@ -41,6 +42,7 @@ pub enum ErrorCode {
 impl ErrorCode {
     pub fn message(&self) -> &'static str {
         match self {
+            ErrorCode::InvalidEvent => "이벤트를 찾을 수 없습니다",
             ErrorCode::InvalidAssignee => "assignee를 찾을 수 없습니다",
             ErrorCode::MissingField => "필수 요청값이 누락되었습니다",
             ErrorCode::ValidationError => "요청값 유효성 검사에 실패했습니다",

@@ -2,7 +2,7 @@ use std::env;
 use actix_web::{get, post, put, web, HttpResponse};
 use chrono::Utc;
 use sea_orm::{EntityTrait, Set, ActiveModelTrait, QueryOrder, DatabaseConnection, QueryFilter, Condition, ColumnTrait, PaginatorTrait, DbErr, QuerySelect, QueryTrait};
-use crate::entity::event::{self, ActiveModel as EventActiveModel, Entity as EventEntity};
+use crate::entity::event::{self, ActiveModel as EventActiveModel, Entity as EventEntity, Column as EventColumn};
 use crate::entity::issue::{ActiveModel as IssueActiveModel, Entity as IssueEntity};
 use crate::entity::project::{Entity as ProjectEntity};
 use crate::entity::project_member::{self, Entity as ProjectMemberEntity};
@@ -12,6 +12,7 @@ use crate::util::slack::send_slack_alert;
 use crate::entity::{issue, project};
 use crate::model::global_error::{AppError, ErrorCode};
 use std::sync::LazyLock;
+use sea_query::Expr;
 use crate::api::project::check_project_member;
 
 async fn find_project_by_api_key(db: &DatabaseConnection, api_key: &str) -> Result<i32, AppError> {
@@ -317,34 +318,48 @@ pub async fn get_project_events(
 
 #[utoipa::path(
     put,
-    path = "/api/projects/{project_id}/events/{id}/priority",
-    summary = "이벤트 우선순위 설정",
+    path = "/api/projects/{project_id}/events/priority",
+    summary = "이벤트 우선순위 일괄 설정",
     request_body = EventPriority,
     responses(
-        (status = 200, description = "이벤트 우선순위 설정 성공", body = EventReportListResponse),
+        (status = 200, description = "우선순위 일괄 설정 성공", body = [EventReportListResponse]),
+        (status = 400, description = "잘못된 요청"),
+        (status = 403, description = "권한 없음"),
     ),
 )]
-#[put("/projects/{project_id}/events/{id}/priority")]
+#[put("/projects/{project_id}/events/priority")]
 pub async fn set_priority(
     db: web::Data<DatabaseConnection>,
-    path: web::Path<(i32, i32)>,
+    path: web::Path<i32>,
     auth_user: web::ReqData<i32>,
     body: web::Json<EventPriority>,
 ) -> Result<HttpResponse, AppError> {
-    let (project_id, event_id) = path.into_inner();
+    let (project_id) = path.into_inner();
     let user_id = auth_user.into_inner();
-    let priority = &body.priority;
+    let EventPriority { event_ids, priority } = body.into_inner();
 
     check_project_member(db.get_ref(), project_id, user_id).await?;
+    check_event_in_project(db.get_ref(), project_id, &event_ids).await?;
 
-    let event = find_event(db.get_ref(), project_id, event_id).await?;
-    let mut active_model: EventActiveModel = event.into();
-    active_model.priority = Set(Some(*priority));
-    active_model.updated_at = Set(Some(Utc::now()));
+    EventEntity::update_many()
+        .col_expr(
+            event::Column::Priority,
+            Expr::value(Some(priority)),
+        )
+        .filter(event::Column::Id.is_in(event_ids.clone()))
+        .exec(db.get_ref())
+        .await?;
 
-    let updated = active_model.update(db.get_ref()).await?;
+    let updated_models = EventEntity::find()
+        .filter(event::Column::ProjectId.eq(project_id))
+        .filter(event::Column::Id.is_in(event_ids))
+        .all(db.get_ref())
+        .await?;
 
-    Ok(HttpResponse::Ok().json(EventReportListResponse::from(updated)))
+    let responses: Vec<EventReportListResponse> =
+        updated_models.into_iter().map(EventReportListResponse::from).collect();
+
+    Ok(HttpResponse::Ok().json(responses))
 }
 
 #[utoipa::path(
@@ -482,4 +497,21 @@ pub async fn find_event(
         .ok_or_else(|| AppError::not_found(ErrorCode::ErrorLogNotFound))?;
 
     Ok(event)
+}
+
+pub async fn check_event_in_project(
+    db: &DatabaseConnection,
+    project_id: i32,
+    event_ids: &[i32],
+) -> Result<(), AppError> {
+    let count = EventEntity::find()
+        .filter(EventColumn::ProjectId.eq(project_id))
+        .filter(EventColumn::Id.is_in(event_ids.to_vec()))
+        .count(db)
+        .await?;
+    if count as usize != event_ids.len() {
+        Err(AppError::bad_request(ErrorCode::InvalidEvent))
+    } else {
+        Ok(())
+    }
 }

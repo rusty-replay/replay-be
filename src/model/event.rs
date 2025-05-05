@@ -158,17 +158,20 @@ pub struct PaginatedResponse<T> {
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EventPriority {
+    pub event_ids: Vec<i32>,
     pub priority: Priority,
 }
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EventAssignee {
+    pub event_ids: Vec<i32>,
     pub assigned_to: Option<i32>,
 }
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EventStatusDto {
+    pub event_ids: Vec<i32>,
     pub status: EventStatus,
 }
