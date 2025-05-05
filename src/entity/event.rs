@@ -32,6 +32,7 @@ pub struct Model {
 
     pub priority: Option<Priority>,
     pub assigned_to: Option<i32>,
+    pub status: EventStatus,
 
     pub created_at: DateTime<Utc>,
     pub updated_at: Option<DateTime<Utc>>,
@@ -48,6 +49,15 @@ pub enum Priority {
     MED,
     #[sea_orm(string_value = "LOW")]
     LOW,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, EnumIter, DeriveActiveEnum, Copy, ToSchema)]
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "event_status")]
+pub enum EventStatus {
+    #[sea_orm(string_value = "UNRESOLVED")]
+    UNRESOLVED,
+    #[sea_orm(string_value = "RESOLVED")]
+    RESOLVED,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -159,6 +169,7 @@ impl ActiveModel {
             issue_id: Set(Some(issue_id)),
             reported_by: Set(event.user_id),
             additional_info: Set(event.additional_info.clone()),
+            status: Set(EventStatus::UNRESOLVED),
             ..Default::default()
         }
     }

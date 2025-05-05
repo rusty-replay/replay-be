@@ -6,7 +6,7 @@ use crate::entity::event::{self, ActiveModel as EventActiveModel, Entity as Even
 use crate::entity::issue::{ActiveModel as IssueActiveModel, Entity as IssueEntity};
 use crate::entity::project::{Entity as ProjectEntity};
 use crate::entity::project_member::{self, Entity as ProjectMemberEntity};
-use crate::model::event::{BatchEventReportRequest, BatchEventReportResponse, EventAssignee, EventPriority, EventQuery, EventReportListResponse, EventReportRequest, EventReportResponse, PaginatedResponse};
+use crate::model::event::{BatchEventReportRequest, BatchEventReportResponse, EventAssignee, EventPriority, EventQuery, EventReportListResponse, EventReportRequest, EventReportResponse, EventStatusDto, PaginatedResponse};
 use sha2::{Sha256, Digest};
 use crate::util::slack::send_slack_alert;
 use crate::entity::{issue, project};
@@ -389,6 +389,41 @@ pub async fn set_assignee(
     let event = find_event(db.get_ref(), project_id, event_id).await?;
     let mut active_model: EventActiveModel = event.into();
     active_model.assigned_to = Set(assigned_to);
+    active_model.updated_at = Set(Some(Utc::now()));
+
+    let updated = active_model.update(db.get_ref()).await?;
+
+    Ok(HttpResponse::Ok().json(EventReportListResponse::from(updated)))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/projects/{project_id}/events/{id}/status",
+    summary = "이벤트 상태 설정",
+    request_body = EventStatusDto,
+    responses(
+        (status = 200, description = "상태 설정 성공", body = EventReportListResponse),
+        (status = 400, description = "잘못된 상태"),
+        (status = 403, description = "접근 권한 없음"),
+        (status = 404, description = "이벤트 또는 프로젝트 없음"),
+    ),
+)]
+#[put("/projects/{project_id}/events/{id}/status")]
+pub async fn set_event_status(
+    db: web::Data<DatabaseConnection>,
+    path: web::Path<(i32, i32)>,
+    auth_user: web::ReqData<i32>,
+    body: web::Json<EventStatusDto>,
+) -> Result<HttpResponse, AppError> {
+    let (project_id, event_id) = path.into_inner();
+    let user_id = auth_user.into_inner();
+    let status = &body.status;
+
+    check_project_member(db.get_ref(), project_id, user_id).await?;
+
+    let event = find_event(db.get_ref(), project_id, event_id).await?;
+    let mut active_model: EventActiveModel = event.into();
+    active_model.status = Set(*status);
     active_model.updated_at = Set(Some(Utc::now()));
 
     let updated = active_model.update(db.get_ref()).await?;

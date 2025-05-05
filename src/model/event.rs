@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
-use crate::entity::event::{Model as EventModel, Priority};
+use crate::entity::event::{EventStatus, Model as EventModel, Priority};
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -44,6 +44,7 @@ pub struct EventReportResponse {
 
     pub priority: Option<Priority>,
     pub assigned_to: Option<i32>,
+    pub status: EventStatus,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -61,6 +62,7 @@ pub struct EventReportListResponse {
     pub has_replay: bool,
     pub priority: Option<Priority>,
     pub assigned_to: Option<i32>,
+    pub status: EventStatus,
 }
 
 impl From<EventModel> for EventReportListResponse {
@@ -78,6 +80,7 @@ impl From<EventModel> for EventReportListResponse {
             has_replay: model.replay.is_some(),
             priority: model.priority,
             assigned_to: model.assigned_to,
+            status: model.status,
         }
     }
 }
@@ -110,6 +113,7 @@ impl From<EventModel> for EventReportResponse {
             updated_at: model.updated_at.map(|dt| dt.to_string()),
             priority: model.priority,
             assigned_to: model.assigned_to,
+            status: model.status,
         }
     }
 }
@@ -161,4 +165,10 @@ pub struct EventPriority {
 #[serde(rename_all = "camelCase")]
 pub struct EventAssignee {
     pub assigned_to: Option<i32>,
+}
+
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EventStatusDto {
+    pub status: EventStatus,
 }
