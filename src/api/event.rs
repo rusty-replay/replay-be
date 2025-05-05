@@ -425,37 +425,48 @@ pub async fn set_assignee(
 
 #[utoipa::path(
     put,
-    path = "/api/projects/{project_id}/events/{id}/status",
-    summary = "이벤트 상태 설정",
+    path = "/projects/{project_id}/events/status",
+    summary = "이벤트 상태 일괄 설정",
     request_body = EventStatusDto,
     responses(
-        (status = 200, description = "상태 설정 성공", body = EventReportListResponse),
-        (status = 400, description = "잘못된 상태"),
-        (status = 403, description = "접근 권한 없음"),
-        (status = 404, description = "이벤트 또는 프로젝트 없음"),
+        (status = 200, description = "상태 일괄 설정 성공", body = [EventReportListResponse]),
+        (status = 400, description = "잘못된 요청"),
+        (status = 403, description = "권한 없음"),
     ),
 )]
-#[put("/projects/{project_id}/events/{id}/status")]
+#[put("/projects/{project_id}/events/status")]
 pub async fn set_event_status(
     db: web::Data<DatabaseConnection>,
-    path: web::Path<(i32, i32)>,
+    path: web::Path<i32>,
     auth_user: web::ReqData<i32>,
     body: web::Json<EventStatusDto>,
 ) -> Result<HttpResponse, AppError> {
-    let (project_id, event_id) = path.into_inner();
+    let project_id = path.into_inner();
     let user_id = auth_user.into_inner();
-    let status = &body.status;
+    let EventStatusDto { event_ids, status } = body.into_inner();
 
     check_project_member(db.get_ref(), project_id, user_id).await?;
+    check_event_in_project(db.get_ref(), project_id, &event_ids).await?;
 
-    let event = find_event(db.get_ref(), project_id, event_id).await?;
-    let mut active_model: EventActiveModel = event.into();
-    active_model.status = Set(*status);
-    active_model.updated_at = Set(Some(Utc::now()));
+    EventEntity::update_many()
+        .col_expr(
+            EventColumn::Status,
+            Expr::value(status),
+        )
+        .filter(EventColumn::Id.is_in(event_ids.clone()))
+        .exec(db.get_ref())
+        .await?;
 
-    let updated = active_model.update(db.get_ref()).await?;
+    let updated = EventEntity::find()
+        .filter(EventColumn::ProjectId.eq(project_id))
+        .filter(EventColumn::Id.is_in(event_ids))
+        .all(db.get_ref())
+        .await?;
 
-    Ok(HttpResponse::Ok().json(EventReportListResponse::from(updated)))
+    let responses: Vec<EventReportListResponse> =
+        updated.into_iter().map(EventReportListResponse::from).collect();
+
+    Ok(HttpResponse::Ok().json(responses))
 }
 
 static SLACK_WEBHOOK_URL: LazyLock<String> = LazyLock::new(|| {
