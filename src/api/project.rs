@@ -83,8 +83,6 @@ pub async fn list_user_projects(
         })
         .collect();
 
-    println!("projects list: {:?}", response);
-
     Ok(HttpResponse::Ok().json(response))
 }
 

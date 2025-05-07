@@ -74,6 +74,7 @@ async fn main() -> anyhow::Result<()> {
 
             .service(api::report_batch_events)
             .service(api::report_event)
+            .service(api::receive_traces)
             .service(
                 scope("/api")
                     .wrap(from_fn(auth_middleware))
