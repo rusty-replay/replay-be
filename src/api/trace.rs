@@ -1,11 +1,16 @@
 use actix_web::{post, web, HttpResponse, Responder};
-use bytes::Bytes;
+// use bytes::Bytes;
 use prost::Message;
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::tonic::common::v1::any_value::Value as AnyValueKind;
+use sea_orm::DatabaseConnection;
+use crate::model::global_error::AppError;
 
 #[post("/traces")]
-async fn receive_traces(body: Bytes) -> impl Responder {
+async fn receive_traces(
+    body: web::Bytes,
+    db: web::Data<DatabaseConnection>
+) -> Result<HttpResponse, AppError> {
     let req = match ExportTraceServiceRequest::decode(body.as_ref()) {
         Ok(r) => r,
         Err(err) => {
@@ -37,7 +42,7 @@ async fn receive_traces(body: Bytes) -> impl Responder {
                     .collect();
 
                 println!("Span attrs: {:?}", attrs);
-                println!("Full span:\n{:#?}", span);
+                // println!("Full span:\n{:#?}", span);
             }
         }
     }
