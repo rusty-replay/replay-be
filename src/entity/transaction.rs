@@ -1,9 +1,13 @@
 use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
+use sea_orm::Set;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+use crate::model::project::ProjectCreateRequest;
+use crate::entity::base_time::{ActiveModelTimeBehavior, BaseTimeFields};
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, DeriveEntityModel)]
 #[sea_orm(table_name = "transaction")]
 pub struct Model {
     #[sea_orm(primary_key)]
@@ -17,8 +21,6 @@ pub struct Model {
     pub environment: String,
     pub status: String,
     pub tags: Option<Value>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -33,21 +35,14 @@ pub enum Relation {
     Span,
 }
 
-impl RelationTrait for Relation {
-    fn def(&self) -> RelationDef {
-        match self {
-            Relation::Project => Entity::belongs_to(super::project::Entity)
-                .from(Column::ProjectId)
-                .to(super::project::Column::Id)
-                .into(),
-            Relation::Span => Entity::has_many(super::span::Entity).into(),
-        }
-    }
-}
-
 impl Related<super::project::Entity> for Entity {
     fn to() -> RelationDef { Relation::Project.def() }
 }
 impl Related<super::span::Entity> for Entity {
     fn to() -> RelationDef { Relation::Span.def() }
 }
+
+
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for ActiveModel {}
