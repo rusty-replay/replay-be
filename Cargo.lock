@@ -2859,6 +2859,7 @@ dependencies = [
  "chrono",
  "dotenv",
  "env_logger",
+ "hex",
  "jsonwebtoken",
  "log",
  "opentelemetry-proto",
