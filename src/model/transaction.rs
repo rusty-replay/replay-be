@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use utoipa::ToSchema;
 use crate::entity::transaction;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct TransactionResponse {
     pub id: i32,
     pub project_id: i32,
@@ -31,4 +32,10 @@ impl From<transaction::Model> for TransactionResponse {
             tags: model.tags,
         }
     }
+}
+
+#[derive(Deserialize, Serialize, ToSchema)]
+pub struct TraceRequest {
+    #[schema(example = "base64 encoded bytes")]
+    pub data: String,
 }

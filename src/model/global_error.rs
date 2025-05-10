@@ -6,8 +6,9 @@ use sea_orm::DbErr;
 use serde::Serialize;
 use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
 pub enum ErrorCode {
+    TransactionNotFound,
     InvalidEvent,
     InvalidAssignee,
     ValidationError,
@@ -42,6 +43,7 @@ pub enum ErrorCode {
 impl ErrorCode {
     pub fn message(&self) -> &'static str {
         match self {
+            ErrorCode::TransactionNotFound => "유효하지 않은 트랜잭션 ID입니다",
             ErrorCode::InvalidEvent => "이벤트를 찾을 수 없습니다",
             ErrorCode::InvalidAssignee => "assignee를 찾을 수 없습니다",
             ErrorCode::MissingField => "필수 요청값이 누락되었습니다",
@@ -76,7 +78,7 @@ impl fmt::Display for ErrorCode {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, ToSchema)]
 pub enum AppError {
     #[error("Bad Request: {0:?}")]
     BadRequest(ErrorCode),

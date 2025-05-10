@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use utoipa::ToSchema;
 use crate::entity::span;
+use crate::model::transaction::TransactionResponse;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct SpanResponse {
     pub id: i32,
     pub transaction_id: i32,
@@ -45,4 +47,22 @@ impl From<span::Model> for SpanResponse {
             attributes: model.attributes,
         }
     }
+}
+
+
+fn default_page() -> i32 { 1 }
+fn default_size() -> i32 { 10 }
+
+#[derive(Deserialize, ToSchema)]
+pub struct TransactionListQuery {
+    #[serde(default = "default_page")]
+    pub page: i32,
+    #[serde(default = "default_size")]
+    pub size: i32,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct TransactionWithSpansResponse {
+    pub transaction: TransactionResponse,
+    pub spans: Vec<SpanResponse>,
 }
