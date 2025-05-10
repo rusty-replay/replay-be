@@ -2,6 +2,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 #[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct PaginationResponse<T> {
     pub content: Vec<T>,
     pub page: i32,

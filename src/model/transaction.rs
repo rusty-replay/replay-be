@@ -4,6 +4,7 @@ use utoipa::ToSchema;
 use crate::entity::transaction;
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct TransactionResponse {
     pub id: i32,
     pub project_id: i32,

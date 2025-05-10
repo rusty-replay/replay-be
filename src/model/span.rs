@@ -5,6 +5,7 @@ use crate::entity::span;
 use crate::model::transaction::TransactionResponse;
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct SpanResponse {
     pub id: i32,
     pub transaction_id: i32,
