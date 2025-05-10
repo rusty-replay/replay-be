@@ -52,7 +52,6 @@ impl Related<super::transaction::Entity> for Entity {
 impl ActiveModelBehavior for ActiveModel {}
 
 impl ActiveModel {
-    /// Span ActiveModel 생성자
     pub fn new(
         transaction_id: i32,
         span_id: Vec<u8>,

@@ -6,7 +6,20 @@ use chrono::{DateTime, TimeZone, Utc};
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::tonic::common::v1::any_value::Value as AnyValueKind;
 use prost::Message;
+use rand::{rng, Rng};
 use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set, TransactionTrait};
+
+pub fn generate_mixed_id() -> String {
+    const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+    let mut rng = rng();
+
+    (0..8)
+        .map(|_| {
+            let idx = rng.random_range(0..CHARSET.len());
+            CHARSET[idx] as char
+        })
+        .collect()
+}
 
 // AnyValueKind → String
 fn any_to_string(kind: &AnyValueKind) -> Option<String> {
@@ -90,62 +103,58 @@ pub async fn receive_traces(
         return Ok(HttpResponse::NoContent().finish());
     }
 
-    // trace_id 별로 그룹화
-    let mut by_trace: HashMap<_, Vec<_>> = Default::default();
-    for s in all_spans {
-        by_trace.entry(s.0.clone()).or_default().push(s);
-    }
-
     let txn = db.begin().await?;
 
-    for (trace_id, spans) in by_trace {
-        let default_time = Utc::now();
-        let start_ts = spans.iter()
-            .map(|s| &s.4)
-            .min()
-            .unwrap_or(&default_time);
+    let default_time = Utc::now();
+    let start_ts = all_spans.iter()
+        .map(|s| &s.4)
+        .min()
+        .unwrap_or(&default_time);
 
-        let end_ts = spans.iter()
-            .map(|s| &s.5)
-            .max()
-            .unwrap_or(&default_time);
+    let end_ts = all_spans.iter()
+        .map(|s| &s.5)
+        .max()
+        .unwrap_or(&default_time);
 
-        let tx_active = transaction::ActiveModel::new(
-            1,
-            trace_id.clone(),
-            "unnamed",
-            *start_ts,
-            *end_ts,
-            "production",
-            "ok",
-            None,
+    let trace_id = generate_mixed_id();
+    let tx_active = transaction::ActiveModel::new(
+        1,
+        trace_id.clone(),
+        "unified_transaction",
+        *start_ts,
+        *end_ts,
+        "production",
+        "ok",
+        None,
+    );
+
+    let tx_inserted: transaction::Model = tx_active.insert(&txn).await?;
+
+    for (orig_trace_id, span_id, parent, name, start, end, http) in all_spans {
+        let mut http_with_orig_trace = http.clone();
+        http_with_orig_trace.insert("original_trace_id".to_string(), orig_trace_id);
+
+        let span_active = span::ActiveModel::new(
+            tx_inserted.id,
+            span_id.clone(),
+            Some(parent),
+            name.clone(),
+            start,
+            end,
+            http.get("http.method").cloned(),
+            http.get("http.url").cloned(),
+            http.get("http.status_code").and_then(|v| v.parse().ok()),
+            http.get("http.status_text").cloned(),
+            http.get("http.response_content_length").and_then(|v| v.parse().ok()),
+            http.get("http.host").cloned(),
+            http.get("http.scheme").cloned(),
+            http.get("http.user_agent").cloned(),
+            Some(serde_json::to_value(&http_with_orig_trace).unwrap_or_default()),
         );
 
-        let tx_inserted: transaction::Model = tx_active.insert(&txn).await?;
-
-        for (_trace, span_id, parent, name, start, end, http) in spans {
-            let span_active = span::ActiveModel::new(
-                tx_inserted.id,
-                span_id.clone(),
-                Some(parent),
-                name.clone(),
-                start,
-                end,
-                http.get("http.method").cloned(),
-                http.get("http.url").cloned(),
-                http.get("http.status_code").and_then(|v| v.parse().ok()),
-                http.get("http.status_text").cloned(),
-                http.get("http.response_content_length").and_then(|v| v.parse().ok()),
-                http.get("http.host").cloned(),
-                http.get("http.scheme").cloned(),
-                http.get("http.user_agent").cloned(),
-                Some(serde_json::to_value(&http).unwrap()),
-            );
-
-            // let span_model: span::Model = span_active.insert(&txn).await?;
-             span_active.insert(&txn).await?;
-        }
+        span_active.insert(&txn).await?;
     }
+
     txn.commit().await?;
     Ok(HttpResponse::Ok().finish())
 }

@@ -43,8 +43,6 @@ impl Related<super::span::Entity> for Entity {
     fn to() -> RelationDef { Relation::Span.def() }
 }
 
-
-
 #[async_trait::async_trait]
 impl ActiveModelBehavior for ActiveModel {}
 
