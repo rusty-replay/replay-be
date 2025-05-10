@@ -31,6 +31,7 @@ pub enum Relation {
         to = "super::project::Column::Id"
     )]
     Project,
+
     #[sea_orm(has_many = "super::span::Entity")]
     Span,
 }
@@ -46,3 +47,31 @@ impl Related<super::span::Entity> for Entity {
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for ActiveModel {}
+
+impl ActiveModel {
+    pub fn new(
+        project_id: i32,
+        trace_id: impl Into<String>,
+        name: impl Into<String>,
+        start_timestamp: DateTime<Utc>,
+        end_timestamp: DateTime<Utc>,
+        environment: impl Into<String>,
+        status: impl Into<String>,
+        tags: Option<Value>,
+    ) -> Self {
+        let duration_ms = (end_timestamp.timestamp_millis() - start_timestamp.timestamp_millis()) as i32;
+
+        Self {
+            project_id: Set(project_id),
+            trace_id: Set(trace_id.into()),
+            name: Set(name.into()),
+            start_timestamp: Set(start_timestamp),
+            end_timestamp: Set(end_timestamp),
+            duration_ms: Set(duration_ms),
+            environment: Set(environment.into()),
+            status: Set(status.into()),
+            tags: Set(tags),
+            ..Default::default()
+        }
+    }
+}

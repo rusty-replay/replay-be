@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::entity::{span, transaction};
 use crate::model::global_error::{AppError, ErrorCode};
 use actix_web::{post, web, HttpResponse};
@@ -16,6 +17,19 @@ fn any_to_string(kind: &AnyValueKind) -> Option<String> {
         AnyValueKind::BoolValue(b) => Some(b.to_string()),
         _ => None,
     }
+}
+
+pub fn calculate_duration(start: &DateTime<Utc>, end: &DateTime<Utc>) -> i32 {
+    (end.timestamp_millis() - start.timestamp_millis()) as i32
+}
+
+fn format_utc(nano: u64) -> Result<DateTime<Utc>, &'static str> {
+    Utc.timestamp_opt(
+        (nano / 1_000_000_000) as i64,
+        (nano % 1_000_000_000) as u32,
+    )
+        .single()
+        .ok_or("Invalid timestamp")
 }
 
 #[post("/traces")]
@@ -37,20 +51,23 @@ pub async fn receive_traces(
         for ss in rs.scope_spans {
             for span in ss.spans {
                 let trace_id = hex::encode(span.trace_id);
-                let start = Utc
-                    .timestamp_opt(
-                        (span.start_time_unix_nano / 1_000_000_000) as i64,
-                        (span.start_time_unix_nano % 1_000_000_000) as u32,
-                    )
-                    .unwrap();
-                let end = Utc
-                    .timestamp_opt(
-                        (span.end_time_unix_nano / 1_000_000_000) as i64,
-                        (span.end_time_unix_nano % 1_000_000_000) as u32,
-                    )
-                    .unwrap();
+                let start = match format_utc(span.start_time_unix_nano) {
+                    Ok(ts) => ts,
+                    Err(e) => {
+                        log::warn!("Invalid start timestamp for span {}: {}", span.name, e);
+                        continue;
+                    }
+                };
 
-                let mut http = std::collections::HashMap::new();
+                let end = match format_utc(span.end_time_unix_nano) {
+                    Ok(ts) => ts,
+                    Err(e) => {
+                        log::warn!("Invalid end timestamp for span {}: {}", span.name, e);
+                        continue;
+                    }
+                };
+
+                let mut http = HashMap::new();
                 for kv in span.attributes {
                     if let Some(val) = kv.value.and_then(|any| any.value).and_then(|k| any_to_string(&k)) {
                         http.insert(kv.key, val);
@@ -74,7 +91,7 @@ pub async fn receive_traces(
     }
 
     // trace_id 별로 그룹화
-    let mut by_trace: std::collections::HashMap<_, Vec<_>> = Default::default();
+    let mut by_trace: HashMap<_, Vec<_>> = Default::default();
     for s in all_spans {
         by_trace.entry(s.0.clone()).or_default().push(s);
     }
@@ -82,49 +99,53 @@ pub async fn receive_traces(
     let txn = db.begin().await?;
 
     for (trace_id, spans) in by_trace {
-        let start_ts = spans.iter().map(|s| s.4).min().unwrap();
-        let end_ts = spans.iter().map(|s| s.5).max().unwrap();
-        let duration = (end_ts.timestamp_millis() - start_ts.timestamp_millis()) as i32;
+        let default_time = Utc::now();
+        let start_ts = spans.iter()
+            .map(|s| &s.4)
+            .min()
+            .unwrap_or(&default_time);
 
-        let tx_model = transaction::ActiveModel {
-            project_id: Set(/* TODO: API key → project_id 매핑 */ 1),
-            trace_id: Set(trace_id.clone()),
-            name: Set("unnamed".into()),
-            start_timestamp: Set(start_ts),
-            end_timestamp: Set(end_ts),
-            duration_ms: Set(duration),
-            environment: Set("production".into()),
-            status: Set("ok".into()),
-            tags: Set(None),
-            ..Default::default()
-        };
-        let tx_inserted = tx_model.insert(&txn).await?;
+        let end_ts = spans.iter()
+            .map(|s| &s.5)
+            .max()
+            .unwrap_or(&default_time);
+
+        let tx_active = transaction::ActiveModel::new(
+            1,
+            trace_id.clone(),
+            "unnamed",
+            *start_ts,
+            *end_ts,
+            "production",
+            "ok",
+            None,
+        );
+
+        let tx_inserted: transaction::Model = tx_active.insert(&txn).await?;
 
         for (_trace, span_id, parent, name, start, end, http) in spans {
-            let span_model = span::ActiveModel {
-                transaction_id: Set(tx_inserted.id),
-                span_id: Set(span_id),
-                parent_span_id: Set(Some(parent)),
-                name: Set(name),
-                start_timestamp: Set(start),
-                end_timestamp: Set(end),
-                duration_ms: Set((end.timestamp_millis() - start.timestamp_millis()) as i32),
-                http_method: Set(http.get("http.method").cloned()),
-                http_url: Set(http.get("http.url").cloned()),
-                http_status_code: Set(http.get("http.status_code").and_then(|v| v.parse().ok())),
-                http_status_text: Set(http.get("http.status_text").cloned()),
-                http_response_content_length: Set(http.get("http.response_content_length").and_then(|v| v.parse().ok())),
-                http_host: Set(http.get("http.host").cloned()),
-                http_scheme: Set(http.get("http.scheme").cloned()),
-                http_user_agent: Set(http.get("http.user_agent").cloned()),
-                attributes: Set(Some(serde_json::to_value(http).unwrap())),
-                ..Default::default()
-            };
-            span_model.insert(&txn).await?;
+            let span_active = span::ActiveModel::new(
+                tx_inserted.id,
+                span_id.clone(),
+                Some(parent),
+                name.clone(),
+                start,
+                end,
+                http.get("http.method").cloned(),
+                http.get("http.url").cloned(),
+                http.get("http.status_code").and_then(|v| v.parse().ok()),
+                http.get("http.status_text").cloned(),
+                http.get("http.response_content_length").and_then(|v| v.parse().ok()),
+                http.get("http.host").cloned(),
+                http.get("http.scheme").cloned(),
+                http.get("http.user_agent").cloned(),
+                Some(serde_json::to_value(&http).unwrap()),
+            );
+
+            // let span_model: span::Model = span_active.insert(&txn).await?;
+             span_active.insert(&txn).await?;
         }
     }
-
     txn.commit().await?;
-
     Ok(HttpResponse::Ok().finish())
 }
