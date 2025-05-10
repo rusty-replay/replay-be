@@ -144,6 +144,8 @@ enum ErrorResponse {
 // DbErr를 AppError로 변환
 impl From<DbErr> for AppError {
     fn from(err: DbErr) -> Self {
+        tracing::error!("Database error: {:?}", err);
+
         let err_str = err.to_string();
         if err_str.contains("Duplicate entry") {
             AppError::bad_request(ErrorCode::DuplicateAccountEmail)
