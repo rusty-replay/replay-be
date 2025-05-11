@@ -248,18 +248,19 @@ pub async fn get_transactions(
 )]
 #[get("/transactions/{id}/spans")]
 pub async fn get_transaction_spans(
-    path: web::Path<i32>,
+    path: web::Path<String>,
     db: web::Data<DatabaseConnection>,
 ) -> Result<HttpResponse, AppError> {
-    let transaction_id = path.into_inner();
+    let trace_id = path.into_inner();
 
-    let transaction = transaction::Entity::find_by_id(transaction_id)
+    let transaction = transaction::Entity::find()
+        .filter(transaction::Column::TraceId.eq(trace_id.clone()))
         .one(db.as_ref())
         .await?
         .ok_or_else(|| AppError::not_found(ErrorCode::TransactionNotFound))?;
 
     let spans = span::Entity::find()
-        .filter(span::Column::TransactionId.eq(transaction_id))
+        .filter(span::Column::TransactionId.eq(transaction.id))
         .order_by(span::Column::StartTimestamp, Order::Asc)
         .all(db.as_ref())
         .await?;
