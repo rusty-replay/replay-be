@@ -1,10 +1,11 @@
+use chrono::SecondsFormat;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
 use crate::entity::span;
 use crate::model::transaction::TransactionResponse;
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SpanResponse {
     pub id: i32,
@@ -12,8 +13,8 @@ pub struct SpanResponse {
     pub span_id: String,
     pub parent_span_id: Option<String>,
     pub name: String,
-    pub start_timestamp: String,
-    pub end_timestamp: String,
+    pub start_timestamp: chrono::DateTime<chrono::Utc>,
+    pub end_timestamp: chrono::DateTime<chrono::Utc>,
     pub duration_ms: i32,
     pub http_method: Option<String>,
     pub http_url: Option<String>,
@@ -34,8 +35,8 @@ impl From<span::Model> for SpanResponse {
             span_id: hex::encode(&model.span_id),
             parent_span_id: model.parent_span_id.map(|p| hex::encode(p)),
             name: model.name,
-            start_timestamp: model.start_timestamp.to_rfc3339(),
-            end_timestamp: model.end_timestamp.to_rfc3339(),
+            start_timestamp: model.start_timestamp,
+            end_timestamp: model.end_timestamp,
             duration_ms: model.duration_ms,
             http_method: model.http_method,
             http_url: model.http_url,
