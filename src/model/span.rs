@@ -1,4 +1,4 @@
-use chrono::SecondsFormat;
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
@@ -13,8 +13,8 @@ pub struct SpanResponse {
     pub span_id: String,
     pub parent_span_id: Option<String>,
     pub name: String,
-    pub start_timestamp: chrono::DateTime<chrono::Utc>,
-    pub end_timestamp: chrono::DateTime<chrono::Utc>,
+    pub start_timestamp: DateTime<Utc>,
+    pub end_timestamp: DateTime<Utc>,
     pub duration_ms: i32,
     pub http_method: Option<String>,
     pub http_url: Option<String>,
