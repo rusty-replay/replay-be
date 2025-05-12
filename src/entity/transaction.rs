@@ -21,6 +21,7 @@ pub struct Model {
     pub environment: String,
     pub status: String,
     pub tags: Option<Value>,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -44,7 +45,14 @@ impl Related<super::span::Entity> for Entity {
 }
 
 #[async_trait::async_trait]
-impl ActiveModelBehavior for ActiveModel {}
+impl ActiveModelBehavior for ActiveModel {
+    async fn before_save<C: ConnectionTrait>(mut self, db: &C, insert: bool) -> Result<Self, DbErr> {
+        if insert {
+            self.created_at = Set(Utc::now());
+        }
+        Ok(self)
+    }
+}
 
 impl ActiveModel {
     pub fn new(
