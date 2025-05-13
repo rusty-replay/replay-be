@@ -16,6 +16,7 @@ use crate::model::project::{ProjectCreateRequest, ProjectDetailResponse, Project
     responses(
         (status = 201, description = "프로젝트 생성 성공", body = ProjectResponse),
     ),
+    tag = "Project"
 )]
 #[post("/projects")]
 pub async fn create_project(
@@ -57,6 +58,7 @@ pub async fn create_project(
     responses(
         (status = 200, description = "프로젝트 목록 조회 성공", body = Vec<ProjectResponse>),
     ),
+    tag = "Project"
 )]
 #[get("/projects")]
 pub async fn list_user_projects(
@@ -97,6 +99,7 @@ pub async fn list_user_projects(
     responses(
         (status = 200, description = "프로젝트 상세 조회 성공", body = ProjectDetailResponse),
     ),
+    tag = "Project"
 )]
 #[get("/projects/{id}")]
 pub async fn get_project(
@@ -141,6 +144,7 @@ pub async fn get_project(
     responses(
         (status = 200, description = "프로젝트 수정 성공", body = ProjectResponse),
     ),
+    tag = "Project"
 )]
 #[put("/projects/{id}")]
 pub async fn update_project(
@@ -176,6 +180,7 @@ pub async fn update_project(
     responses(
         (status = 204, description = "프로젝트 삭제 성공"),
     ),
+    tag = "Project"
 )]
 #[delete("/projects/{id}")]
 pub async fn delete_project(
@@ -206,6 +211,7 @@ pub async fn delete_project(
     responses(
         (status = 200, description = "프로젝트 멤버 조회 성공", body = [ProjectMemberResponse]),
     ),
+    tag = "Project"
 )]
 #[get("/projects/{id}/users")]
 pub async fn get_project_users(
@@ -282,28 +288,6 @@ pub async fn check_project_member(
 
     Ok(())
 }
-
-// pub async fn check_assigned_project_member(
-//     db: &DatabaseConnection,
-//     project_id: i32,
-//     user_id: i32,
-// ) -> Result<i32, AppError> {
-//     let is_assigned = ProjectMemberEntity::find()
-//         .filter(
-//             Condition::all()
-//                 .add(project_member::Column::ProjectId.eq(project_id))
-//                 .add(project_member::Column::UserId.eq(user_id))
-//                 .add(project_member::Column::Role.ne("viewer"))
-//         )
-//         .one(db)
-//         .await?;
-//
-//     if is_assigned.is_none() {
-//         return Err(AppError::forbidden(ErrorCode::NotEnoughPermission));
-//     }
-//
-//
-// }
 
 pub async fn check_project_owner(
     db: &DatabaseConnection,

@@ -18,6 +18,7 @@ use crate::auth::jwt::{build_access_token_cookie, build_refresh_token_cookie, Jw
         (status = 400, description = "잘못된 요청", body = ValidationFieldError),
         (status = 409, description = "중복된 이메일 또는 사용자명"),
     ),
+    tag = "Auth"
 )]
 #[post("/auth/register")]
 pub async fn register(
@@ -79,6 +80,7 @@ pub async fn register(
         (status = 400, description = "잘못된 요청", body = ValidationFieldError),
         (status = 401, description = "잘못된 이메일 또는 비밀번호"),
     ),
+    tag = "Auth"
 )]
 #[post("/auth/login")]
 pub async fn login(
@@ -122,6 +124,7 @@ pub async fn login(
         (status = 200, description = "리프레시 토큰 성공"),
         (status = 401, description = "잘못된 리프레시 토큰"),
     ),
+    tag = "Auth"
 )]
 #[post("/auth/refresh")]
 pub async fn refresh_token(
@@ -165,6 +168,7 @@ pub async fn refresh_token(
         (status = 200, description = "내 정보 조회 성공", body = UserResponse),
         (status = 401, description = "인증되지 않음"),
     ),
+    tag = "Auth"
 )]
 #[get("/auth/me")]
 pub async fn get_me(

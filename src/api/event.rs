@@ -80,6 +80,7 @@ async fn create_or_update_issue(db: &DatabaseConnection, project_id: i32, group_
     responses(
         (status = 200, description = "이벤트 전송 성공", body = BatchEventReportResponse),
     ),
+    tag = "Event"
 )]
 #[post("/batch-events")]
 pub async fn report_batch_events(
@@ -167,6 +168,7 @@ async fn process_event(
     responses(
         (status = 201, description = "이벤트 전송 성공", body = EventReportListResponse),
     ),
+    tag = "Event"
 )]
 #[post("/events")]
 pub async fn report_event(
@@ -191,6 +193,7 @@ pub async fn report_event(
 #[utoipa::path(
     get,
     path = "/api/projects/{project_id}/events",
+    summary = "프로젝트 이벤트 목록 조회",
     params(
         ("project_id" = i32, Path, description = "프로젝트 ID"),
         ("search" = Option<String>, Query, description = "검색어"),
@@ -202,6 +205,7 @@ pub async fn report_event(
     responses(
         (status = 200, description = "이벤트 목록 조회 성공", body = Vec<EventReportListResponse>),
     ),
+    tag = "Event"
 )]
 #[get("/projects/{project_id}/events")]
 pub async fn list_project_events(
@@ -279,6 +283,7 @@ pub async fn list_project_events(
     responses(
         (status = 200, description = "이벤트 상세 조회 성공", body = EventReportResponse),
     ),
+    tag = "Event"
 )]
 #[get("/projects/{project_id}/events/{id}")]
 pub async fn get_project_events(
@@ -326,6 +331,7 @@ pub async fn get_project_events(
         (status = 400, description = "잘못된 요청"),
         (status = 403, description = "권한 없음"),
     ),
+    tag = "Event"
 )]
 #[put("/projects/{project_id}/events/priority")]
 pub async fn set_priority(
@@ -372,6 +378,7 @@ pub async fn set_priority(
         (status = 400, description = "잘못된 요청"),
         (status = 403, description = "권한 없음"),
     ),
+    tag = "Event"
 )]
 #[put("/projects/{project_id}/events/assignee")]
 pub async fn set_assignee(
@@ -433,6 +440,7 @@ pub async fn set_assignee(
         (status = 400, description = "잘못된 요청"),
         (status = 403, description = "권한 없음"),
     ),
+    tag = "Event"
 )]
 #[put("/projects/{project_id}/events/status")]
 pub async fn set_event_status(
@@ -508,7 +516,7 @@ pub async fn find_event(
     db: &DatabaseConnection,
     project_id: i32,
     event_id: i32,
-) -> Result<crate::entity::event::Model, AppError> {
+) -> Result<event::Model, AppError> {
     let event = EventEntity::find()
         .filter(
             Condition::all()

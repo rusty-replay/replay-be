@@ -61,7 +61,8 @@ fn format_utc(nano: u64) -> Result<DateTime<Utc>, &'static str> {
     security(
         ("api_key" = [])
     ),
-    tag = "Trace"
+    tag = "Trace",
+    summary = "trace 받기"
 )]
 #[post("/traces")]
 pub async fn receive_traces(
@@ -179,6 +180,7 @@ pub async fn receive_traces(
 #[utoipa::path(
     get,
     path = "/api/transactions",
+    summary = "transaction 가져오기",
     params(
         ("page" = i32, Query, description = "Page number", example = 1),
         ("size" = i32, Query, description = "Page size", example = 10),
@@ -234,6 +236,7 @@ pub async fn get_transactions(
 #[utoipa::path(
     get,
     path = "/api/transactions/{id}/spans",
+    summary = "transaction spans 가져오기",
     params(
         ("id" = i32, Path, description = "Transaction ID"),
     ),
