@@ -212,9 +212,6 @@ pub async fn get_transactions(
         .order_by_desc(transaction::Column::StartTimestamp)
         .offset(offset)
         .limit(size as u64)
-        // .order_by(transaction::Column::StartTimestamp, Order::Desc)
-        // .offset(offset)
-        // .limit(size as u64)
         .all(db.as_ref())
         .await?;
 

@@ -155,8 +155,6 @@ async fn process_event(
         }
     }.expect("TODO: panic message");
 
-    // let _ = new_log.insert(db).await?;
-
     Ok(project_id)
 }
 
@@ -540,6 +538,7 @@ pub async fn check_event_in_project(
         .filter(EventColumn::Id.is_in(event_ids.to_vec()))
         .count(db)
         .await?;
+
     if count as usize != event_ids.len() {
         Err(AppError::bad_request(ErrorCode::InvalidEvent))
     } else {
