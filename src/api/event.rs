@@ -13,6 +13,7 @@ use crate::entity::{issue, project};
 use crate::model::global_error::{AppError, ErrorCode};
 use std::sync::LazyLock;
 use sea_query::Expr;
+use tracing::error;
 use crate::api::project::check_project_member;
 
 async fn find_project_by_api_key(db: &DatabaseConnection, api_key: &str) -> Result<i32, AppError> {
@@ -113,10 +114,14 @@ pub async fn report_batch_events(
             .unwrap_or(0);
 
         if count >= ERROR_THRESHOLD as u64 {
-            let _ = send_slack_alert(
-                &SLACK_WEBHOOK_URL,
-                &format!("🚨 Project {} 에 에러가 {}개 이상 발생했습니다.", project_id, count),
-            ).await;
+            let webhook_url = SLACK_WEBHOOK_URL.clone();
+            let alert_message = format!("🚨 Project {} 에 에러가 {}개 이상 발생했습니다.", project_id, count);
+
+            tokio::spawn(async move {
+                if let Err(e) = send_slack_alert(&webhook_url, &alert_message).await {
+                    error!("Slack 알림 전송 실패: {:?}", e);
+                }
+            });
         }
     }
 
@@ -475,7 +480,7 @@ pub async fn set_event_status(
     Ok(HttpResponse::Ok().json(responses))
 }
 
-static SLACK_WEBHOOK_URL: LazyLock<String> = LazyLock::new(|| {
+pub static SLACK_WEBHOOK_URL: LazyLock<String> = LazyLock::new(|| {
     env::var("SLACK_WEBHOOK_URL").expect("SLACK_WEBHOOK_URL 환경 변수가 설정되어야 합니다.")
 });
 const ERROR_THRESHOLD: usize = 1;

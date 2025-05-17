@@ -42,3 +42,9 @@ opentelemetry-proto = { version = "0.29.0", features = ["full"] }
 prost = "0.13.5"
 hex = "0.4.3"
 rand = "0.9.1"
+lapin = { version = "2.5.3", default-features = false }
+tokio-amqp = "2.0.0"
+futures-util = "0.3.31"
+tokio-executor-trait = "2.1.3"
+tokio-reactor-trait = "2.0.0"
+httptest = "0.16.3"

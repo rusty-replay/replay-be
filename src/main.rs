@@ -21,6 +21,7 @@ use utoipa::OpenApi;
 use utoipa_actix_web::AppExt;
 use utoipa_swagger_ui::SwaggerUi;
 use entity::{event, user};
+use rusty_replay::amqp::{AmqpClient, AmqpConfig};
 use rusty_replay::telemetry::{get_subscriber, init_subscriber};
 use crate::auth::{auth_middleware};
 use crate::migration::{Migrator, MigratorTrait};
@@ -46,6 +47,16 @@ async fn main() -> anyhow::Result<()> {
 
     let db_data = Data::new(db);
 
+    // AMQP
+    let amqp_config = AmqpConfig {
+        uri: std::env::var("RABBITMQ_URI").expect("RABBITMQ_URI 환경변수 필요"),
+        queue_name: std::env::var("RABBITMQ_QUEUE").expect("RABBITMQ_QUEUE 환경변수 필요"),
+        slack_webhook: std::env::var("SLACK_WEBHOOK").expect("SLACK_WEBHOOK 환경변수 필요"),
+    };
+
+    let amqp_client = AmqpClient::new(amqp_config).await?;
+    let amqp_data = Data::new(amqp_client);
+
     info!("서버 시작 중: http://127.0.0.1:8081");
     HttpServer::new(move || {
         let cors = Cors::default()
@@ -67,6 +78,7 @@ async fn main() -> anyhow::Result<()> {
             .app_data(JsonConfig::default().limit(10 * 1024 * 1024))
             .wrap(cors)
             .app_data(db_data.clone())
+            .app_data(amqp_data.clone())
             .service(api::health_check::health_check)
             .service(api::register)
             .service(api::login)

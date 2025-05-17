@@ -7,3 +7,4 @@ pub mod model;
 pub mod auth;
 pub mod migration;
 pub mod util;
+pub mod amqp;
