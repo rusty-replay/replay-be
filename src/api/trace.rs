@@ -12,7 +12,12 @@ use rand::{rng, Rng};
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait};
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::env;
+use std::sync::LazyLock;
+use tracing::error;
+use crate::api::event::SLACK_WEBHOOK_URL;
 use crate::model::transaction::TraceRequest;
+use crate::util::slack::send_slack_alert;
 
 pub fn generate_mixed_id() -> String {
     const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
@@ -76,6 +81,15 @@ pub async fn receive_traces(
         })?;
 
     println!("OTLP traces: {:?}", req);
+
+    let webhook_url = SLACK_WEBHOOK_URL.clone();
+    let alert_message = format!("🚨 OTLP Trace Alert 🚨\n\nTrace ID: {}\nNumber of Spans: {}", req.resource_spans.len(), req.resource_spans.iter().map(|rs| rs.scope_spans.len()).sum::<usize>());
+
+    tokio::spawn(async move {
+        if let Err(e) = send_slack_alert(&webhook_url, &alert_message).await {
+            error!("Slack 알림 전송 실패: {:?}", e);
+        }
+    });
 
     let mut all_spans = Vec::new();
     for rs in req.resource_spans {

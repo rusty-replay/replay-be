@@ -480,7 +480,7 @@ pub async fn set_event_status(
     Ok(HttpResponse::Ok().json(responses))
 }
 
-static SLACK_WEBHOOK_URL: LazyLock<String> = LazyLock::new(|| {
+pub static SLACK_WEBHOOK_URL: LazyLock<String> = LazyLock::new(|| {
     env::var("SLACK_WEBHOOK_URL").expect("SLACK_WEBHOOK_URL 환경 변수가 설정되어야 합니다.")
 });
 const ERROR_THRESHOLD: usize = 1;
