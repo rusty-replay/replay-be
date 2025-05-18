@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "project_members")]
@@ -11,9 +12,25 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub project_id: i32,
 
-    pub role: String,  // "owner", "admin", "member", "viewer"
+    pub role: Role,
 
     pub joined_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, EnumIter, DeriveActiveEnum, Copy, ToSchema)]
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "role")]
+pub enum Role {
+    #[sea_orm(string_value = "owner")]
+    Owner,
+
+    #[sea_orm(string_value = "admin")]
+    Admin,
+
+    #[sea_orm(string_value = "member")]
+    Member,
+
+    #[sea_orm(string_value = "viewer")]
+    Viewer,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

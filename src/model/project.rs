@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use crate::entity::project::Model as ProjectModel;
 use chrono::{DateTime, Utc};
 use utoipa::ToSchema;
+use crate::entity::project_member::Role;
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ProjectCreateRequest {
@@ -53,7 +54,7 @@ pub struct ProjectMemberResponse {
     pub user_id: i32,
     pub username: String,
     pub email: String,
-    pub role: String,
+    pub role: Role,
     pub joined_at: DateTime<Utc>,
 }
 
