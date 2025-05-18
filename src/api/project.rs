@@ -2,9 +2,11 @@ use actix_web::{delete, get, post, put, web, HttpResponse};
 use chrono::Utc;
 use sea_orm::{Set, ActiveModelTrait, EntityTrait, QueryFilter, ColumnTrait, DatabaseConnection};
 use sea_query::Condition;
+use crate::api::project_member::check_project_owner;
 use crate::entity::project_member::{Entity as ProjectMemberEntity, ActiveModel as ProjectMemberActiveModel};
 use crate::entity::project::{Entity as ProjectEntity, ActiveModel as ProjectActiveModel};
 use crate::entity::{project_member, user};
+use crate::entity::project_member::Role as ProjectMemberRole;
 use crate::model::global_error::{AppError, ErrorCode};
 use crate::model::project::{ProjectCreateRequest, ProjectDetailResponse, ProjectMemberResponse, ProjectResponse, ProjectUpdateRequest};
 
@@ -25,7 +27,7 @@ pub async fn create_project(
     auth_user: web::ReqData<i32>,
 ) -> Result<HttpResponse, AppError> {
     let api_key = format!("proj_{}", uuid::Uuid::new_v4().to_string().replace("-", ""));
-    let now = chrono::Utc::now();
+    let now = Utc::now();
 
     let new_project = ProjectActiveModel {
         name: Set(body.name.clone()),
@@ -41,7 +43,7 @@ pub async fn create_project(
     let member = ProjectMemberActiveModel {
         user_id: Set(*auth_user),
         project_id: Set(inserted_project.id),
-        role: Set("owner".to_string()),
+        role: Set(ProjectMemberRole::Owner),
         joined_at: Set(now.into()),
     };
 
@@ -125,7 +127,7 @@ pub async fn get_project(
             user_id: u.id,
             username: u.username.clone(),
             email: u.email.clone(),
-            role: member.role.clone(),
+            role: member.role,
             joined_at: member.joined_at.into(),
         }))
         .collect();
@@ -283,28 +285,6 @@ pub async fn check_project_member(
         .await?;
 
     if is_member.is_none() {
-        return Err(AppError::forbidden(ErrorCode::NotEnoughPermission));
-    }
-
-    Ok(())
-}
-
-pub async fn check_project_owner(
-    db: &DatabaseConnection,
-    project_id: i32,
-    user_id: i32,
-) -> Result<(), AppError> {
-    let is_owner = ProjectMemberEntity::find()
-        .filter(
-            Condition::all()
-                .add(project_member::Column::ProjectId.eq(project_id))
-                .add(project_member::Column::UserId.eq(user_id))
-                .add(project_member::Column::Role.eq("owner"))
-        )
-        .one(db)
-        .await?;
-
-    if is_owner.is_none() {
         return Err(AppError::forbidden(ErrorCode::NotEnoughPermission));
     }
 
